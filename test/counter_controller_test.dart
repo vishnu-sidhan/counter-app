@@ -91,7 +91,7 @@ void main() {
       );
 
       await controller.decrement(counterUnbounded.id);
-      expect(controller.filteredCounters.first.count, -1);
+      expect(controller.filteredCounters.firstWhere((c) => c.id == counterUnbounded.id).count, -1);
     });
 
     test('resets counter to 0', () async {
@@ -166,7 +166,9 @@ void main() {
       expect(controller.filteredCounters.length, 3);
     });
 
-    test('sorts counters by criteria', () async {
+    test('sorts counters by criteria with alphabetical as default', () async {
+      expect(controller.sortOption, SortOption.alphabetical);
+
       await controller.addCounter(
         title: 'Zebra',
         initialCount: 10,
@@ -183,11 +185,18 @@ void main() {
         colorHex: 0xFF2563EB,
       );
 
+      // Default is Alphabetical
+      expect(controller.filteredCounters.map((c) => c.title).toList(), ['Alpha', 'Beta', 'Zebra']);
+
       // Highest Count
       controller.setSortOption(SortOption.highestCount);
       expect(controller.filteredCounters.map((c) => c.count).toList(), [50, 30, 10]);
 
-      // Alphabetical
+      // Recently Updated
+      controller.setSortOption(SortOption.recentlyUpdated);
+      expect(controller.filteredCounters.map((c) => c.title).toList(), ['Beta', 'Alpha', 'Zebra']);
+
+      // Back to Alphabetical
       controller.setSortOption(SortOption.alphabetical);
       expect(controller.filteredCounters.map((c) => c.title).toList(), ['Alpha', 'Beta', 'Zebra']);
     });

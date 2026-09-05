@@ -18,7 +18,7 @@ A modern, offline-first, ergonomic Multi-Counter and tally tracker built with Fl
   - Cross-platform support: iOS, Android, macOS, Windows, Linux, and Web (backed by `window.localStorage`).
 - **Dynamic Organization:**
   - Real-time search by title with quick-clear button.
-  - Multi-criteria sorting: *Recently Updated*, *Highest Count*, and *Alphabetical*.
+  - Multi-criteria sorting: *Alphabetical* (default), *Recently Updated*, and *Highest Count*.
   - 10 curated color themes (Sapphire, Emerald, Sunset, Crimson, Violet, Teal, Amber, Rose, Indigo, Slate).
 - **Safety & Recovery:**
   - Swipe-to-delete cards (`Dismissible`) with instant floating `UNDO` SnackBar.

@@ -23,13 +23,15 @@ class CounterController extends ChangeNotifier {
   List<CounterModel> _counters = [];
   bool _isLoading = true;
   String _searchQuery = '';
-  SortOption _sortOption = SortOption.recentlyUpdated;
+  SortOption _sortOption;
 
   CounterController({
     CounterStorageService? storageService,
     Uuid? uuid,
+    SortOption initialSortOption = SortOption.alphabetical,
   })  : _storageService = storageService ?? CounterStorageService(),
-        _uuid = uuid ?? const Uuid();
+        _uuid = uuid ?? const Uuid(),
+        _sortOption = initialSortOption;
 
   /// Whether the controller is currently loading stored data.
   bool get isLoading => _isLoading;
