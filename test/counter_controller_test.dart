@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:counter_app/controllers/counter_controller.dart';
+import 'package:counter_app/data/models/counter_log_entry.dart';
 import 'package:counter_app/data/services/counter_storage_service.dart';
 
 void main() {
@@ -199,6 +200,55 @@ void main() {
       // Back to Alphabetical
       controller.setSortOption(SortOption.alphabetical);
       expect(controller.filteredCounters.map((c) => c.title).toList(), ['Alpha', 'Beta', 'Zebra']);
+    });
+
+    test('records activity logs on increment, decrement, and reset', () async {
+      final counter = await controller.addCounter(
+        title: 'Habit',
+        initialCount: 5,
+        step: 2,
+        colorHex: 0xFF059669,
+      );
+
+      expect(controller.logs, isEmpty);
+
+      // Increment
+      await controller.increment(counter.id);
+      expect(controller.logs.length, 1);
+      final incLog = controller.logs.first;
+      expect(incLog.counterId, counter.id);
+      expect(incLog.actionType, CounterActionType.increment);
+      expect(incLog.changeAmount, 2);
+      expect(incLog.resultingCount, 7);
+
+      // Decrement
+      await controller.decrement(counter.id);
+      expect(controller.logs.length, 2);
+      final decLog = controller.logs.first;
+      expect(decLog.actionType, CounterActionType.decrement);
+      expect(decLog.changeAmount, -2);
+      expect(decLog.resultingCount, 5);
+
+      // Reset
+      await controller.reset(counter.id);
+      expect(controller.logs.length, 3);
+      final resetLog = controller.logs.first;
+      expect(resetLog.actionType, CounterActionType.reset);
+      expect(resetLog.resultingCount, 0);
+
+      // Verify log filtering by counter
+      controller.filterLogsByCounter(counter.id);
+      expect(controller.filteredLogs.length, 3);
+
+      controller.filterLogsByCounter('non-existent-id');
+      expect(controller.filteredLogs, isEmpty);
+
+      controller.filterLogsByCounter(null);
+      expect(controller.filteredLogs.length, 3);
+
+      // Verify clear all logs
+      await controller.clearAllLogs();
+      expect(controller.logs, isEmpty);
     });
   });
 }

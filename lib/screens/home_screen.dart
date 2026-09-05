@@ -4,6 +4,7 @@ import '../widgets/add_edit_counter_sheet.dart';
 import '../widgets/counter_card.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/search_sort_bar.dart';
+import 'history_screen.dart';
 
 /// Main screen displaying the list of counters, search/sort filters, and creation actions.
 class HomeScreen extends StatelessWidget {
@@ -106,6 +107,18 @@ class HomeScreen extends StatelessWidget {
           appBar: AppBar(
             title: const Text('Counters'),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.history_rounded),
+                tooltip: 'Activity History',
+                onPressed: () {
+                  controller.filterLogsByCounter(null);
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (ctx) => HistoryScreen(controller: controller),
+                    ),
+                  );
+                },
+              ),
               if (totalCounters > 0)
                 Padding(
                   padding: const EdgeInsets.only(right: 16),
@@ -199,6 +212,14 @@ class HomeScreen extends StatelessWidget {
                                       onReset: () => controller.reset(counter.id),
                                       onEdit: () => _openEditSheet(context, counter.id),
                                       onDelete: () => _handleDelete(context, counter.id),
+                                      onViewHistory: () {
+                                        controller.filterLogsByCounter(counter.id);
+                                        Navigator.of(context).push(
+                                          MaterialPageRoute(
+                                            builder: (ctx) => HistoryScreen(controller: controller),
+                                          ),
+                                        );
+                                      },
                                     ),
                                   );
                                 },

@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../data/models/counter_model.dart';
+import '../data/models/counter_log_entry.dart';
 import '../data/services/counter_storage_service.dart';
 
 /// Supported sort modes for the counters list.
@@ -21,9 +22,11 @@ class CounterController extends ChangeNotifier {
   final Uuid _uuid;
 
   List<CounterModel> _counters = [];
+  List<CounterLogEntry> _logs = [];
   bool _isLoading = true;
   String _searchQuery = '';
   SortOption _sortOption;
+  String? _selectedLogCounterId;
 
   CounterController({
     CounterStorageService? storageService,
@@ -72,16 +75,32 @@ class CounterController extends ChangeNotifier {
     return list;
   }
 
-  /// Initializes storage and loads persisted counters.
+  /// All activity logs (newest first).
+  List<CounterLogEntry> get logs => List.unmodifiable(_logs);
+
+  /// Selected counter ID to filter logs, or null for all counters.
+  String? get selectedLogCounterId => _selectedLogCounterId;
+
+  /// Filtered activity logs based on selected counter filter.
+  List<CounterLogEntry> get filteredLogs {
+    if (_selectedLogCounterId == null) {
+      return List.unmodifiable(_logs);
+    }
+    return _logs.where((l) => l.counterId == _selectedLogCounterId).toList();
+  }
+
+  /// Initializes storage and loads persisted counters and logs.
   Future<void> init() async {
     _isLoading = true;
     notifyListeners();
 
     try {
       _counters = await _storageService.loadCounters();
+      _logs = await _storageService.loadLogs();
     } catch (e) {
       debugPrint('Error initializing CounterController: $e');
       _counters = [];
+      _logs = [];
     } finally {
       _isLoading = false;
       notifyListeners();
@@ -179,6 +198,15 @@ class CounterController extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
 
+    _addLogEntry(
+      counterId: existing.id,
+      counterTitle: existing.title,
+      counterColorHex: existing.colorHex,
+      actionType: CounterActionType.increment,
+      changeAmount: existing.step,
+      resultingCount: newCount,
+    );
+
     HapticFeedback.lightImpact();
     notifyListeners();
     _silentSave();
@@ -207,6 +235,15 @@ class CounterController extends ChangeNotifier {
       updatedAt: DateTime.now(),
     );
 
+    _addLogEntry(
+      counterId: existing.id,
+      counterTitle: existing.title,
+      counterColorHex: existing.colorHex,
+      actionType: CounterActionType.decrement,
+      changeAmount: -(existing.count - newCount),
+      resultingCount: newCount,
+    );
+
     HapticFeedback.selectionClick();
     notifyListeners();
     _silentSave();
@@ -217,14 +254,67 @@ class CounterController extends ChangeNotifier {
     final index = _counters.indexWhere((c) => c.id == id);
     if (index == -1) return;
 
-    _counters[index] = _counters[index].copyWith(
+    final existing = _counters[index];
+    final oldCount = existing.count;
+
+    _counters[index] = existing.copyWith(
       count: 0,
       updatedAt: DateTime.now(),
+    );
+
+    _addLogEntry(
+      counterId: existing.id,
+      counterTitle: existing.title,
+      counterColorHex: existing.colorHex,
+      actionType: CounterActionType.reset,
+      changeAmount: -oldCount,
+      resultingCount: 0,
     );
 
     HapticFeedback.mediumImpact();
     notifyListeners();
     _silentSave();
+  }
+
+  /// Sets the active counter filter for activity logs (null shows all counters).
+  void filterLogsByCounter(String? counterId) {
+    if (_selectedLogCounterId == counterId) return;
+    _selectedLogCounterId = counterId;
+    notifyListeners();
+  }
+
+  /// Clears all stored activity history.
+  Future<void> clearAllLogs() async {
+    _logs.clear();
+    notifyListeners();
+    await _storageService.clearLogs();
+  }
+
+  /// Records an activity log entry and persists to storage in the background.
+  void _addLogEntry({
+    required String counterId,
+    required String counterTitle,
+    required int counterColorHex,
+    required CounterActionType actionType,
+    required int changeAmount,
+    required int resultingCount,
+  }) {
+    final entry = CounterLogEntry(
+      id: _uuid.v4(),
+      counterId: counterId,
+      counterTitle: counterTitle,
+      counterColorHex: counterColorHex,
+      actionType: actionType,
+      changeAmount: changeAmount,
+      resultingCount: resultingCount,
+      timestamp: DateTime.now(),
+    );
+
+    _logs.insert(0, entry);
+    if (_logs.length > CounterStorageService.maxStoredLogs) {
+      _logs = _logs.sublist(0, CounterStorageService.maxStoredLogs);
+    }
+    _storageService.saveLogs(List.unmodifiable(_logs));
   }
 
   /// Deletes a counter by ID. Returns a tuple with the deleted counter and its index.

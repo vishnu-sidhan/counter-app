@@ -2,10 +2,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/counter_model.dart';
+import '../models/counter_log_entry.dart';
 
 /// Service responsible for local persistence using SharedPreferences and JSON encoding.
 class CounterStorageService {
   static const String _storageKey = 'multi_counter_items_v1';
+  static const String _logsStorageKey = 'multi_counter_logs_v1';
+  static const int maxStoredLogs = 1000;
 
   final SharedPreferences? _prefsInstance;
 
@@ -61,13 +64,73 @@ class CounterStorageService {
     }
   }
 
-  /// Clears all saved counters from storage.
+  /// Loads all saved activity logs from local storage.
+  Future<List<CounterLogEntry>> loadLogs() async {
+    try {
+      final prefs = await _getPrefs();
+      final jsonString = prefs.getString(_logsStorageKey);
+
+      if (jsonString == null || jsonString.trim().isEmpty) {
+        return <CounterLogEntry>[];
+      }
+
+      final dynamic decoded = jsonDecode(jsonString);
+      if (decoded is List) {
+        return decoded
+            .map((item) {
+              if (item is Map<String, dynamic>) {
+                return CounterLogEntry.fromJson(item);
+              } else if (item is Map) {
+                return CounterLogEntry.fromJson(Map<String, dynamic>.from(item));
+              }
+              return null;
+            })
+            .whereType<CounterLogEntry>()
+            .toList();
+      }
+      return <CounterLogEntry>[];
+    } catch (e, stackTrace) {
+      debugPrint('CounterStorageService: Failed to load logs - $e\n$stackTrace');
+      return <CounterLogEntry>[];
+    }
+  }
+
+  /// Persists the list of activity logs, retaining up to maxStoredLogs entries.
+  Future<bool> saveLogs(List<CounterLogEntry> logs) async {
+    try {
+      final prefs = await _getPrefs();
+      final boundedLogs = logs.length > maxStoredLogs
+          ? logs.sublist(0, maxStoredLogs)
+          : logs;
+      final listMap = boundedLogs.map((log) => log.toJson()).toList();
+      final jsonString = jsonEncode(listMap);
+      return await prefs.setString(_logsStorageKey, jsonString);
+    } catch (e, stackTrace) {
+      debugPrint('CounterStorageService: Failed to save logs - $e\n$stackTrace');
+      return false;
+    }
+  }
+
+  /// Clears saved activity logs.
+  Future<bool> clearLogs() async {
+    try {
+      final prefs = await _getPrefs();
+      return await prefs.remove(_logsStorageKey);
+    } catch (e, stackTrace) {
+      debugPrint('CounterStorageService: Failed to clear logs - $e\n$stackTrace');
+      return false;
+    }
+  }
+
+  /// Clears all saved counters and logs from storage.
   Future<bool> clearAll() async {
     try {
       final prefs = await _getPrefs();
-      return await prefs.remove(_storageKey);
+      await prefs.remove(_storageKey);
+      await prefs.remove(_logsStorageKey);
+      return true;
     } catch (e, stackTrace) {
-      debugPrint('CounterStorageService: Failed to clear counters - $e\n$stackTrace');
+      debugPrint('CounterStorageService: Failed to clear storage - $e\n$stackTrace');
       return false;
     }
   }

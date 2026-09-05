@@ -10,6 +10,7 @@ class CounterCard extends StatelessWidget {
   final VoidCallback onReset;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback? onViewHistory;
 
   const CounterCard({
     super.key,
@@ -19,6 +20,7 @@ class CounterCard extends StatelessWidget {
     required this.onReset,
     required this.onEdit,
     required this.onDelete,
+    this.onViewHistory,
   });
 
   Color get _accentColor => Color(counter.colorHex);
@@ -143,6 +145,9 @@ class CounterCard extends StatelessWidget {
                     ),
                     onSelected: (value) {
                       switch (value) {
+                        case 'history':
+                          onViewHistory?.call();
+                          break;
                         case 'edit':
                           onEdit();
                           break;
@@ -155,6 +160,17 @@ class CounterCard extends StatelessWidget {
                       }
                     },
                     itemBuilder: (ctx) => [
+                      if (onViewHistory != null)
+                        const PopupMenuItem(
+                          value: 'history',
+                          child: Row(
+                            children: [
+                              Icon(Icons.history_rounded, size: 20),
+                              SizedBox(width: 12),
+                              Text('View History'),
+                            ],
+                          ),
+                        ),
                       const PopupMenuItem(
                         value: 'edit',
                         child: Row(
