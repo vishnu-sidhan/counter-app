@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../controllers/counter_controller.dart';
 import '../widgets/add_edit_counter_sheet.dart';
 import '../widgets/counter_card.dart';
+import '../widgets/csv_import_dialog.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/search_sort_bar.dart';
 import 'history_screen.dart';
@@ -91,6 +92,32 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
+  void _openCsvImport(BuildContext context) {
+    CsvImportDialog.showCountersDialog(
+      context,
+      existingCount: controller.counters.length,
+      onImport: (importedCounters, replaceExisting) async {
+        await controller.importCounters(
+          importedCounters,
+          replaceExisting: replaceExisting,
+        );
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                replaceExisting
+                    ? 'Replaced counters with ${importedCounters.length} items from CSV!'
+                    : 'Imported ${importedCounters.length} counters from CSV!',
+              ),
+              behavior: SnackBarBehavior.floating,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -118,6 +145,11 @@ class HomeScreen extends StatelessWidget {
                     ),
                   );
                 },
+              ),
+              IconButton(
+                icon: const Icon(Icons.upload_file_rounded),
+                tooltip: 'Import Counters from CSV',
+                onPressed: () => _openCsvImport(context),
               ),
               if (totalCounters > 0)
                 Padding(

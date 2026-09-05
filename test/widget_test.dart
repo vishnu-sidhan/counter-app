@@ -59,4 +59,41 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.widgetWithText(AppBar, 'Counters'), findsOneWidget);
   });
+
+  testWidgets('HomeScreen imports counters from CSV via AppBar action', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storageService = CounterStorageService(prefs: prefs);
+    final controller = CounterController(storageService: storageService);
+    await controller.init();
+
+    await tester.pumpWidget(MultiCounterApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    // Verify CSV import action exists in AppBar
+    expect(find.byTooltip('Import Counters from CSV'), findsOneWidget);
+
+    // Tap CSV import
+    await tester.tap(find.byTooltip('Import Counters from CSV'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import Counters from CSV'), findsOneWidget);
+
+    // Switch to Paste Text tab
+    await tester.tap(find.text('Paste Text'));
+    await tester.pumpAndSettle();
+
+    // Load sample
+    await tester.tap(find.text('Load Sample'));
+    await tester.pumpAndSettle();
+
+    // Import items
+    await tester.tap(find.text('Import 5 Items'));
+    await tester.pumpAndSettle();
+
+    // Verify counters were imported and rendered (sorted alphabetically)
+    expect(controller.counters.length, 5);
+    expect(find.text('Budget Delta'), findsOneWidget);
+    expect(find.text('Daily Water Glasses'), findsOneWidget);
+  });
 }

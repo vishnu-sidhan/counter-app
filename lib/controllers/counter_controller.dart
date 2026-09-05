@@ -49,6 +49,9 @@ class CounterController extends ChangeNotifier {
   int get totalCountSum =>
       _counters.fold(0, (sum, counter) => sum + counter.count);
 
+  /// All active counters.
+  List<CounterModel> get counters => List.unmodifiable(_counters);
+
   /// Number of active counters.
   int get totalCountersCount => _counters.length;
 
@@ -149,6 +152,22 @@ class CounterController extends ChangeNotifier {
 
     _silentSave();
     return newCounter;
+  }
+
+  /// Bulk imports counters, either appending or replacing existing items.
+  Future<void> importCounters(
+    List<CounterModel> importedCounters, {
+    bool replaceExisting = false,
+  }) async {
+    if (importedCounters.isEmpty) return;
+
+    if (replaceExisting) {
+      _counters = List.from(importedCounters);
+    } else {
+      _counters.insertAll(0, importedCounters);
+    }
+    notifyListeners();
+    _silentSave();
   }
 
   /// Updates an existing counter's configuration.

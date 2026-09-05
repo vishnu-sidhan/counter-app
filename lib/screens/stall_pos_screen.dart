@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../data/models/stall_models.dart';
 import '../data/services/stall_storage_service.dart';
+import '../widgets/csv_import_dialog.dart';
 import 'order_history_screen.dart';
 
 // Re-export models for backwards compatibility
@@ -423,6 +424,36 @@ class _StallPosScreenState extends State<StallPosScreen>
     _loadPersistedData();
   }
 
+  void _openCsvImport() {
+    CsvImportDialog.showMenuItemsDialog(
+      context,
+      existingCount: _menu.length,
+      onImport: (importedItems, replaceExisting) {
+        setState(() {
+          if (replaceExisting) {
+            _menu = List.from(importedItems);
+            _cart.clear();
+            _selectedCategory = 'All';
+          } else {
+            _menu.addAll(importedItems);
+          }
+        });
+        _saveState();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              replaceExisting
+                  ? 'Replaced menu with ${importedItems.length} items from CSV!'
+                  : 'Imported ${importedItems.length} menu items from CSV!',
+            ),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // BUILD UI
   // ---------------------------------------------------------------------------
@@ -453,6 +484,11 @@ class _StallPosScreenState extends State<StallPosScreen>
             icon: const Icon(Icons.receipt_long_rounded),
             tooltip: 'Order History',
             onPressed: _openOrderHistory,
+          ),
+          IconButton(
+            icon: const Icon(Icons.upload_file_rounded),
+            tooltip: 'Upload Menu CSV',
+            onPressed: _openCsvImport,
           ),
           IconButton(
             icon: const Icon(Icons.add),
@@ -634,6 +670,12 @@ class _StallPosScreenState extends State<StallPosScreen>
                           color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 14,
                         ),
+                      ),
+                      const SizedBox(height: 16),
+                      OutlinedButton.icon(
+                        onPressed: _openCsvImport,
+                        icon: const Icon(Icons.upload_file_rounded, size: 18),
+                        label: const Text('Upload CSV Menu'),
                       ),
                     ],
                   ),

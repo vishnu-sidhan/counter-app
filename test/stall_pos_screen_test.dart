@@ -244,4 +244,47 @@ void main() {
 
     expect(find.text('⚡ StallPOS'), findsOneWidget);
   });
+
+  testWidgets('StallPosScreen imports menu items from CSV via empty state button', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: StallPosScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify empty state shows 'Upload CSV Menu'
+    expect(find.text('Upload CSV Menu'), findsOneWidget);
+
+    // Tap 'Upload CSV Menu'
+    await tester.tap(find.text('Upload CSV Menu'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Import POS Menu Items'), findsOneWidget);
+
+    // Switch to Paste Text tab
+    await tester.tap(find.text('Paste Text'));
+    await tester.pumpAndSettle();
+
+    // Tap 'Load Sample'
+    await tester.tap(find.text('Load Sample'));
+    await tester.pumpAndSettle();
+
+    // Tap 'Import 7 Items'
+    await tester.tap(find.text('Import 7 Items'));
+    await tester.pumpAndSettle();
+
+    // Verify items and categories are loaded into menu
+    expect(find.text('Masala Chai'), findsOneWidget);
+    expect(find.text('Filter Coffee'), findsOneWidget);
+    expect(find.text('Veg Samosa'), findsOneWidget);
+    expect(find.text('Beverages'), findsWidgets);
+    expect(find.text('Snacks'), findsWidgets);
+
+    // Tap on item to start order
+    await tester.tap(find.text('Masala Chai'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('PUNCH ORDER (#1) • ₹20'), findsOneWidget);
+  });
 }

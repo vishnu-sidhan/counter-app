@@ -1,0 +1,126 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:counter_app/services/csv_import_service.dart';
+
+void main() {
+  group('CsvImportService - Menu Items', () {
+    test('parses standard 3-column CSV with headers', () {
+      const csv = '''name,price,category
+Masala Chai,20,Beverages
+Veg Samosa,25,Snacks
+Paneer Roll,80.50,Fast Food''';
+
+      final result = CsvImportService.parseMenuItemsFromCsv(csv);
+
+      expect(result.items.length, 3);
+      expect(result.skippedRowsCount, 0);
+      expect(result.items[0].name, 'Masala Chai');
+      expect(result.items[0].price, 20.0);
+      expect(result.items[0].category, 'Beverages');
+
+      expect(result.items[1].name, 'Veg Samosa');
+      expect(result.items[1].price, 25.0);
+      expect(result.items[1].category, 'Snacks');
+
+      expect(result.items[2].name, 'Paneer Roll');
+      expect(result.items[2].price, 80.50);
+      expect(result.items[2].category, 'Fast Food');
+    });
+
+    test('handles RFC 4180 quotes and commas inside fields', () {
+      const csv = '''"name","price","category"
+"Chai, Special Masala",30,"Hot Drinks, Tea"
+"Double ""Deluxe"" Burger",150,Fast Food''';
+
+      final result = CsvImportService.parseMenuItemsFromCsv(csv);
+
+      expect(result.items.length, 2);
+      expect(result.items[0].name, 'Chai, Special Masala');
+      expect(result.items[0].price, 30.0);
+      expect(result.items[0].category, 'Hot Drinks, Tea');
+
+      expect(result.items[1].name, 'Double "Deluxe" Burger');
+      expect(result.items[1].price, 150.0);
+    });
+
+    test('cleans currency symbols and defaults category to General', () {
+      const csv = '''item,rate
+Coffee,₹ 40
+Tea,\$2.50
+Water Bottle,20''';
+
+      final result = CsvImportService.parseMenuItemsFromCsv(csv);
+
+      expect(result.items.length, 3);
+      expect(result.items[0].name, 'Coffee');
+      expect(result.items[0].price, 40.0);
+      expect(result.items[0].category, 'General');
+
+      expect(result.items[1].price, 2.50);
+      expect(result.items[2].price, 20.0);
+    });
+
+    test('skips rows with missing names or non-positive prices', () {
+      const csv = '''name,price,category
+Valid Item,50,Snacks
+,40,Snacks
+Invalid Price,abc,Snacks
+Free Item,0,Promos
+Negative Item,-10,Snacks''';
+
+      final result = CsvImportService.parseMenuItemsFromCsv(csv);
+
+      expect(result.items.length, 1);
+      expect(result.items[0].name, 'Valid Item');
+      expect(result.skippedRowsCount, 4);
+      expect(result.warnings.length, 4);
+    });
+
+    test('handles empty CSV input gracefully', () {
+      final result = CsvImportService.parseMenuItemsFromCsv('   \n  \n');
+      expect(result.items, isEmpty);
+      expect(result.hasItems, isFalse);
+      expect(result.warnings, isNotEmpty);
+    });
+  });
+
+  group('CsvImportService - Counters', () {
+    test('parses counter CSV with standard headers', () {
+      const csv = '''title,count,step,target,allowNegative,colorHex
+Glasses of Water,2,1,8,false,0xFF0284C7
+Workout Reps,10,5,100,false,#059669
+Negative Tracker,0,1,,true,0xFFDC2626''';
+
+      final result = CsvImportService.parseCountersFromCsv(csv);
+
+      expect(result.items.length, 3);
+      expect(result.items[0].title, 'Glasses of Water');
+      expect(result.items[0].count, 2);
+      expect(result.items[0].step, 1);
+      expect(result.items[0].target, 8);
+      expect(result.items[0].allowNegative, isFalse);
+      expect(result.items[0].colorHex, 0xFF0284C7);
+
+      expect(result.items[1].title, 'Workout Reps');
+      expect(result.items[1].count, 10);
+      expect(result.items[1].step, 5);
+      expect(result.items[1].target, 100);
+      expect(result.items[1].colorHex, 0xFF059669);
+
+      expect(result.items[2].title, 'Negative Tracker');
+      expect(result.items[2].target, isNull);
+      expect(result.items[2].allowNegative, isTrue);
+    });
+
+    test('skips counters without title', () {
+      const csv = '''title,count,step
+Daily Pushups,0,10
+,5,1''';
+
+      final result = CsvImportService.parseCountersFromCsv(csv);
+
+      expect(result.items.length, 1);
+      expect(result.items[0].title, 'Daily Pushups');
+      expect(result.skippedRowsCount, 1);
+    });
+  });
+}
