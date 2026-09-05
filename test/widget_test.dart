@@ -46,5 +46,17 @@ void main() {
 
     // Verify counter incremented to 1
     expect(find.text('1'), findsOneWidget);
+
+    // Tap Stall POS AppBar action
+    await tester.tap(find.byTooltip('Stall POS'));
+    await tester.pumpAndSettle();
+
+    // Verify Stall POS screen is shown
+    expect(find.text('⚡ StallPOS'), findsOneWidget);
+
+    // Switch back to Counters screen via bottom navigation
+    await tester.tap(find.byTooltip('Counters'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(AppBar, 'Counters'), findsOneWidget);
   });
 }

@@ -1,5 +1,6 @@
 import 'package:intl/intl.dart';
 import '../data/models/counter_log_entry.dart';
+import '../data/models/stall_models.dart';
 import 'csv_download_stub.dart'
     if (dart.library.io) 'csv_download_io.dart'
     if (dart.library.js_interop) 'csv_download_web.dart';
@@ -47,6 +48,51 @@ class CsvExportService {
         ? counterTitle.trim().replaceAll(RegExp(r'[^\w\s-]'), '').replaceAll(' ', '_').toLowerCase()
         : 'counter_activity';
     final filename = '${prefix}_$nowStr.csv';
+
+    await saveOrShareCsv(
+      csvContent: csvContent,
+      filename: filename,
+    );
+  }
+
+  /// Converts a list of [StallOrder] into a standard RFC 4180 CSV string.
+  static String generateOrdersCsv(List<StallOrder> orders) {
+    final buffer = StringBuffer();
+    buffer.writeln('Token,Timestamp,Date,Time,Status,Items Summary,Total Amount,Completed At');
+
+    final dateFormat = DateFormat('yyyy-MM-dd');
+    final timeFormat = DateFormat('h:mm:ss a');
+
+    for (final order in orders) {
+      final safeSummary = '"${order.itemsSummary.replaceAll('"', '""')}"';
+      final status = order.isCompleted ? 'Completed' : 'Pending';
+      final completedStr = order.completedAt != null
+          ? order.completedAt!.toIso8601String()
+          : '';
+
+      buffer.writeln(
+        '#${order.token},'
+        '${order.timestamp.toIso8601String()},'
+        '${dateFormat.format(order.timestamp)},'
+        '${timeFormat.format(order.timestamp)},'
+        '$status,'
+        '$safeSummary,'
+        '${order.total.toStringAsFixed(2)},'
+        '$completedStr',
+      );
+    }
+    return buffer.toString();
+  }
+
+  /// Generates the orders CSV and triggers platform-appropriate download or share action.
+  static Future<void> exportOrdersCsv({
+    required List<StallOrder> orders,
+  }) async {
+    if (orders.isEmpty) return;
+
+    final csvContent = generateOrdersCsv(orders);
+    final nowStr = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+    final filename = 'stall_orders_$nowStr.csv';
 
     await saveOrShareCsv(
       csvContent: csvContent,
