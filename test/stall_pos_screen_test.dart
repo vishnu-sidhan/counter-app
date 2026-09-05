@@ -287,4 +287,54 @@ void main() {
 
     expect(find.text('PUNCH ORDER (#1) • ₹20'), findsOneWidget);
   });
+
+  testWidgets('StallPosScreen renders category colors in filter bar and headings', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: StallPosScreen(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Add first item with 'Beverages' category
+    await tester.tap(find.byTooltip('Add Menu Item'));
+    await tester.pumpAndSettle();
+
+    var textFields = find.byType(TextField);
+    await tester.enterText(textFields.at(0), 'Masala Tea');
+    await tester.enterText(textFields.at(1), '20');
+    await tester.enterText(textFields.at(2), 'Beverages');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Item'));
+    await tester.pumpAndSettle();
+
+    // Add second item with 'Snacks' category
+    await tester.tap(find.byTooltip('Add Menu Item'));
+    await tester.pumpAndSettle();
+
+    textFields = find.byType(TextField);
+    await tester.enterText(textFields.at(0), 'Aloo Samosa');
+    await tester.enterText(textFields.at(1), '30');
+    await tester.enterText(textFields.at(2), 'Snacks');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Add Item'));
+    await tester.pumpAndSettle();
+
+    // Category filter chips should be present: 'All', 'Beverages', 'Snacks'
+    expect(find.text('All'), findsOneWidget);
+    expect(find.text('Beverages'), findsWidgets);
+    expect(find.text('Snacks'), findsWidgets);
+
+    // Verify ChoiceChips have avatar dots for specific categories
+    final chips = tester.widgetList<ChoiceChip>(find.byType(ChoiceChip)).toList();
+    expect(chips.length, greaterThanOrEqualTo(3));
+
+    // Find the chip for 'Beverages' and verify it has an avatar dot
+    final bevChip = chips.firstWhere((c) => (c.label as Text).data == 'Beverages');
+    expect(bevChip.avatar, isNotNull);
+
+    // Verify category headings render with items count badge
+    expect(find.text('Masala Tea'), findsOneWidget);
+    expect(find.text('Aloo Samosa'), findsOneWidget);
+  });
 }

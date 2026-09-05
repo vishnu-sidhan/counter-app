@@ -5,6 +5,8 @@ import 'package:uuid/uuid.dart';
 import '../data/models/counter_model.dart';
 import '../data/models/stall_models.dart';
 
+import '../theme/category_colors.dart';
+
 /// Holds the parsed items, skipped counts, and diagnostic warnings from a CSV import.
 class CsvParseResult<T> {
   final List<T> items;
@@ -64,6 +66,7 @@ Budget Delta,0,10,,true,0xFFDC2626''';
   /// - `name` (required)
   /// - `price` (required, > 0)
   /// - `category` (optional, defaults to 'General')
+  /// - `color` (optional, hex or name; if not defined, a random category color is assigned)
   static CsvParseResult<MenuItem> parseMenuItemsFromCsv(String csvContent) {
     final trimmed = csvContent.trim();
     if (trimmed.isEmpty) {
@@ -100,6 +103,7 @@ Budget Delta,0,10,,true,0xFFDC2626''';
     int nameIdx = 0;
     int priceIdx = 1;
     int categoryIdx = 2;
+    int colorIdx = -1;
     int startIndex = 0;
 
     final firstRow = rows.first.map((c) => c.toString().trim().toLowerCase()).toList();
@@ -115,6 +119,8 @@ Budget Delta,0,10,,true,0xFFDC2626''';
           priceIdx = i;
         } else if (col == 'category' || col == 'cat' || col == 'group' || col == 'type' || col == 'section') {
           categoryIdx = i;
+        } else if (col == 'color' || col == 'colorhex' || col == 'color_hex' || col == 'colour') {
+          colorIdx = i;
         }
       }
     } else {
@@ -123,6 +129,8 @@ Budget Delta,0,10,,true,0xFFDC2626''';
 
     final items = <MenuItem>[];
     final warnings = <String>[];
+    final categoryColors = <String, int>{};
+    final usedColors = <int>{};
     int skippedCount = 0;
 
     for (int i = startIndex; i < rows.length; i++) {
@@ -136,6 +144,7 @@ Budget Delta,0,10,,true,0xFFDC2626''';
       final name = nameIdx < row.length ? row[nameIdx].toString().trim() : '';
       final rawPrice = priceIdx < row.length ? row[priceIdx].toString().trim() : '';
       var category = categoryIdx < row.length ? row[categoryIdx].toString().trim() : '';
+      final rawColor = colorIdx != -1 && colorIdx < row.length ? row[colorIdx].toString().trim() : '';
 
       if (name.isEmpty) {
         skippedCount++;
@@ -157,11 +166,32 @@ Budget Delta,0,10,,true,0xFFDC2626''';
         category = 'General';
       }
 
+      // Determine category color: if color is defined, use it; if not defined, assign a guaranteed unique, visually distinct color!
+      final parsedColor = CategoryColorHelper.parseColor(rawColor);
+      final normalizedCat = category.toLowerCase();
+      int assignedColor;
+
+      if (parsedColor != null) {
+        assignedColor = parsedColor;
+        categoryColors[normalizedCat] = assignedColor;
+        usedColors.add(assignedColor);
+      } else if (categoryColors.containsKey(normalizedCat)) {
+        assignedColor = categoryColors[normalizedCat]!;
+      } else {
+        assignedColor = CategoryColorHelper.getUniqueColor(
+          categoryName: category,
+          usedColors: usedColors,
+        );
+        categoryColors[normalizedCat] = assignedColor;
+        usedColors.add(assignedColor);
+      }
+
       items.add(MenuItem(
         id: 'item_${DateTime.now().millisecondsSinceEpoch}_${_uuid.v4().substring(0, 8)}',
         name: name,
         price: price,
         category: category,
+        colorHex: assignedColor,
       ));
     }
 
@@ -181,7 +211,10 @@ Budget Delta,0,10,,true,0xFFDC2626''';
         c == 'product' ||
         c == 'price' ||
         c == 'rate' ||
-        c == 'category');
+        c == 'category' ||
+        c == 'color' ||
+        c == 'colorhex' ||
+        c == 'color_hex');
   }
 
   /// Parses CSV text content into a list of [CounterModel]s.

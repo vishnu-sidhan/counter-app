@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:counter_app/services/csv_import_service.dart';
+import 'package:counter_app/theme/category_colors.dart';
 
 void main() {
   group('CsvImportService - Menu Items', () {
@@ -80,6 +81,72 @@ Negative Item,-10,Snacks''';
       expect(result.items, isEmpty);
       expect(result.hasItems, isFalse);
       expect(result.warnings, isNotEmpty);
+    });
+
+    test('parses menu CSV with explicit color column', () {
+      const csv = '''name,price,category,color
+Masala Chai,20,Beverages,#EA580C
+Veg Samosa,25,Snacks,0xFF059669
+Chocolate Donut,60,Dessert,crimson''';
+
+      final result = CsvImportService.parseMenuItemsFromCsv(csv);
+      expect(result.items.length, 3);
+      expect(result.items[0].colorHex, 0xFFEA580C);
+      expect(result.items[1].colorHex, 0xFF059669);
+      expect(result.items[2].colorHex, 0xFFDC2626);
+    });
+
+    test('assigns random category color when color is not defined and shares color across category', () {
+      const csv = '''name,price,category
+Filter Coffee,30,Beverages
+Masala Chai,20,Beverages
+Veg Puff,35,Snacks''';
+
+      final result = CsvImportService.parseMenuItemsFromCsv(csv);
+      expect(result.items.length, 3);
+      // Colors are assigned
+      expect(result.items[0].colorHex, isNotNull);
+      expect(result.items[1].colorHex, isNotNull);
+      expect(result.items[2].colorHex, isNotNull);
+
+      // Same category shares the assigned category color
+      expect(result.items[0].colorHex, equals(result.items[1].colorHex));
+
+      // Different category can have a different color
+      expect(result.items[0].category, 'Beverages');
+      expect(result.items[2].category, 'Snacks');
+    });
+
+    test('guarantees unique and distinct colors for all imported categories', () {
+      const csv = '''name,price,category
+Tea,10,Hot Drinks
+Coffee,20,Cold Drinks
+Samosa,15,Snacks
+Burger,50,Fast Food
+Cake,40,Desserts
+Biryani,100,Meals
+Combo,120,Combos''';
+
+      final result = CsvImportService.parseMenuItemsFromCsv(csv);
+      expect(result.items.length, 7);
+
+      final categoryColors = <String, int>{};
+      for (final item in result.items) {
+        categoryColors[item.category] = item.colorHex!;
+      }
+
+      // 7 categories must produce 7 strictly unique colors
+      expect(categoryColors.values.toSet().length, equals(7));
+
+      // Check that all assigned colors have significant perceptual distance (no two look the same)
+      final colorsList = categoryColors.values.toList();
+      for (int i = 0; i < colorsList.length; i++) {
+        for (int j = i + 1; j < colorsList.length; j++) {
+          final dist = CategoryColorHelper.colorDistance(colorsList[i], colorsList[j]);
+          expect(dist, greaterThanOrEqualTo(70.0),
+              reason: 'Colors ${colorsList[i]} and ${colorsList[j]} must be visually distinct');
+        }
+      }
     });
   });
 

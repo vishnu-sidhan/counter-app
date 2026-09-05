@@ -1,3 +1,5 @@
+import '../../theme/category_colors.dart';
+
 // Data models for the Stall POS screen and orders.
 
 class MenuItem {
@@ -5,12 +7,14 @@ class MenuItem {
   final String name;
   final double price;
   final String category;
+  final int? colorHex;
 
   const MenuItem({
     required this.id,
     required this.name,
     required this.price,
     this.category = 'General',
+    this.colorHex,
   });
 
   MenuItem copyWith({
@@ -18,12 +22,15 @@ class MenuItem {
     String? name,
     double? price,
     String? category,
+    int? colorHex,
+    bool clearColor = false,
   }) {
     return MenuItem(
       id: id ?? this.id,
       name: name ?? this.name,
       price: price ?? this.price,
       category: category ?? this.category,
+      colorHex: clearColor ? null : (colorHex ?? this.colorHex),
     );
   }
 
@@ -32,16 +39,24 @@ class MenuItem {
         'name': name,
         'price': price,
         'category': category,
+        if (colorHex != null) 'colorHex': colorHex,
       };
 
-  factory MenuItem.fromJson(Map<String, dynamic> map) => MenuItem(
-        id: map['id']?.toString() ?? '',
-        name: map['name']?.toString() ?? '',
-        price: (map['price'] as num?)?.toDouble() ?? 0.0,
-        category: (map['category']?.toString().trim().isNotEmpty == true)
-            ? map['category']!.toString().trim()
-            : 'General',
-      );
+  factory MenuItem.fromJson(Map<String, dynamic> map) {
+    final category = (map['category']?.toString().trim().isNotEmpty == true)
+        ? map['category']!.toString().trim()
+        : 'General';
+    final parsedColor = map['colorHex'] != null
+        ? (map['colorHex'] as num?)?.toInt()
+        : CategoryColorHelper.parseColor(map['color']);
+    return MenuItem(
+      id: map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? '',
+      price: (map['price'] as num?)?.toDouble() ?? 0.0,
+      category: category,
+      colorHex: parsedColor ?? CategoryColorHelper.getColorForCategory(category),
+    );
+  }
 }
 
 class StallOrder {

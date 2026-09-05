@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../data/models/counter_model.dart';
 import '../data/models/stall_models.dart';
 import '../services/csv_import_service.dart';
+import '../theme/category_colors.dart';
 
 enum CsvImportType { menuItem, counter }
 
@@ -201,8 +202,8 @@ class _CsvImportDialogState<T> extends State<CsvImportDialog<T>>
                         ),
                         Text(
                           isMenu
-                              ? 'CSV headers: name, price, category'
-                              : 'CSV headers: title, count, step, target, allowNegative',
+                              ? 'CSV headers: name, price, category, [color]'
+                              : 'CSV headers: title, count, step, target, allowNegative, [color]',
                           style: theme.textTheme.bodySmall?.copyWith(
                             color: theme.colorScheme.onSurfaceVariant,
                           ),
@@ -474,16 +475,35 @@ class _CsvImportDialogState<T> extends State<CsvImportDialog<T>>
               itemBuilder: (context, index) {
                 final item = _parsedItems[index];
                 if (item is MenuItem) {
+                  final catColor = item.colorHex != null
+                      ? Color(item.colorHex!)
+                      : Color(CategoryColorHelper.getColorForCategory(item.category));
+
                   return Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Expanded(
-                          child: Text(
-                            '• ${item.name} (${item.category})',
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: catColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '${item.name} (${item.category})',
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                         Text(

@@ -5,6 +5,7 @@ import '../data/models/stall_models.dart';
 import '../data/services/stall_storage_service.dart';
 import '../widgets/csv_import_dialog.dart';
 import 'order_history_screen.dart';
+import '../theme/category_colors.dart';
 
 // Re-export models for backwards compatibility
 export '../data/models/stall_models.dart';
@@ -91,6 +92,55 @@ class _StallPosScreenState extends State<StallPosScreen>
       }
     }
     return set.toList();
+  }
+
+  /// Computes a guaranteed unique, visually distinct color for every category in the menu.
+  /// No two categories will ever share the same color or look alike.
+  Map<String, int> get _resolvedCategoryColors {
+    final result = <String, int>{};
+    final usedColors = <int>{};
+    final allCategories = _categories.where((c) => c != 'All').toList();
+
+    // 1. First pass: Assign explicit colors from menu items if not already claimed
+    for (final cat in allCategories) {
+      final normalized = cat.trim().toLowerCase();
+      for (final m in _menu) {
+        if (m.category.trim().toLowerCase() == normalized && m.colorHex != null) {
+          if (!usedColors.contains(m.colorHex!)) {
+            result[cat] = m.colorHex!;
+            usedColors.add(m.colorHex!);
+            break;
+          }
+        }
+      }
+    }
+
+    // 2. Second pass: For categories without colors or on collision, allocate a guaranteed unique color
+    for (final cat in allCategories) {
+      if (!result.containsKey(cat)) {
+        final uniqueColor = CategoryColorHelper.getUniqueColor(
+          categoryName: cat,
+          usedColors: usedColors,
+        );
+        result[cat] = uniqueColor;
+        usedColors.add(uniqueColor);
+      }
+    }
+
+    return result;
+  }
+
+  Color _getCategoryColor(String category) {
+    if (category == 'All') {
+      return Theme.of(context).colorScheme.primary;
+    }
+    final map = _resolvedCategoryColors;
+    final hex = map[category] ??
+        CategoryColorHelper.getUniqueColor(
+          categoryName: category,
+          usedColors: map.values.toSet(),
+        );
+    return Color(hex);
   }
 
   List<MenuItem> get _filteredMenu {
@@ -208,6 +258,7 @@ class _StallPosScreenState extends State<StallPosScreen>
     String selectedCat = existingItem?.category ??
         (_selectedCategory != 'All' ? _selectedCategory : 'General');
     final categoryCtrl = TextEditingController(text: selectedCat);
+    int? selectedColorHex = existingItem?.colorHex;
 
     // Existing categories (excluding 'All')
     final existingCategories = _categories.where((c) => c != 'All').toList();
@@ -218,110 +269,231 @@ class _StallPosScreenState extends State<StallPosScreen>
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) => AlertDialog(
-          title: Text(isEditing ? 'Edit Menu Item' : 'Add Menu Item'),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: nameCtrl,
-                  autofocus: !isEditing,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Item Name *',
-                    hintText: 'e.g. Masala Chai, Veg Roll',
-                  ),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: priceCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                    labelText: 'Price (₹) *',
-                    hintText: 'e.g. 50',
-                    prefixText: '₹ ',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                const Text(
-                  'Category',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 6),
-                // Quick category suggestions chips
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 4,
-                  children: existingCategories.map((cat) {
-                    final isCurrent = categoryCtrl.text.trim().toLowerCase() ==
-                        cat.trim().toLowerCase();
-                    return ChoiceChip(
-                      label: Text(cat, style: const TextStyle(fontSize: 12)),
-                      selected: isCurrent,
-                      onSelected: (selected) {
-                        if (selected) {
-                          setDialogState(() {
-                            categoryCtrl.text = cat;
-                          });
-                        }
-                      },
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: categoryCtrl,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Or enter custom category',
-                    hintText: 'e.g. Beverages, Snacks, Dessert',
-                  ),
-                ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final name = nameCtrl.text.trim();
-                final price = double.tryParse(priceCtrl.text.trim()) ?? 0;
-                var category = categoryCtrl.text.trim();
-                if (category.isEmpty) category = 'General';
+        builder: (context, setDialogState) {
+          final effectiveCategory = categoryCtrl.text.trim().isEmpty ? 'General' : categoryCtrl.text.trim();
+          final currentEffectiveColor = selectedColorHex != null
+              ? Color(selectedColorHex!)
+              : _getCategoryColor(effectiveCategory);
 
-                if (name.isNotEmpty && price > 0) {
-                  setState(() {
-                    if (isEditing) {
-                      final idx = _menu.indexWhere((m) => m.id == existingItem.id);
-                      if (idx != -1) {
-                        _menu[idx] = existingItem.copyWith(
+          return AlertDialog(
+            title: Text(isEditing ? 'Edit Menu Item' : 'Add Menu Item'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    autofocus: !isEditing,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Item Name *',
+                      hintText: 'e.g. Masala Chai, Veg Roll',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: priceCtrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: const InputDecoration(
+                      labelText: 'Price (₹) *',
+                      hintText: 'e.g. 50',
+                      prefixText: '₹ ',
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Category',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  // Quick category suggestions chips
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: existingCategories.map((cat) {
+                      final isCurrent = categoryCtrl.text.trim().toLowerCase() ==
+                          cat.trim().toLowerCase();
+                      final catColor = _getCategoryColor(cat);
+                      return ChoiceChip(
+                        avatar: Container(
+                          width: 8,
+                          height: 8,
+                          decoration: BoxDecoration(
+                            color: catColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        label: Text(cat, style: const TextStyle(fontSize: 12)),
+                        selected: isCurrent,
+                        selectedColor: catColor.withValues(alpha: 0.2),
+                        side: BorderSide(
+                          color: isCurrent ? catColor : catColor.withValues(alpha: 0.3),
+                        ),
+                        onSelected: (selected) {
+                          if (selected) {
+                            setDialogState(() {
+                              categoryCtrl.text = cat;
+                            });
+                          }
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: categoryCtrl,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Or enter custom category',
+                      hintText: 'e.g. Beverages, Snacks, Dessert',
+                    ),
+                    onChanged: (_) => setDialogState(() {}),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text(
+                        'Category & Item Color',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      Container(
+                        width: 14,
+                        height: 14,
+                        decoration: BoxDecoration(
+                          color: currentEffectiveColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 1.5),
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        selectedColorHex == null ? 'Auto / Random' : 'Custom',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: ActionChip(
+                            avatar: Icon(
+                              Icons.auto_awesome,
+                              size: 14,
+                              color: selectedColorHex == null
+                                  ? Theme.of(context).colorScheme.primary
+                                  : null,
+                            ),
+                            label: const Text('Auto', style: TextStyle(fontSize: 11)),
+                            backgroundColor: selectedColorHex == null
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : null,
+                            onPressed: () {
+                              setDialogState(() {
+                                selectedColorHex = null;
+                              });
+                            },
+                          ),
+                        ),
+                        ...CategoryColorHelper.palette.map((colorVal) {
+                          final isSelected = selectedColorHex == colorVal;
+                          final color = Color(colorVal);
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 3),
+                            child: GestureDetector(
+                              onTap: () {
+                                setDialogState(() {
+                                  selectedColorHex = colorVal;
+                                });
+                              },
+                              child: Container(
+                                width: 28,
+                                height: 28,
+                                decoration: BoxDecoration(
+                                  color: color,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? Theme.of(context).colorScheme.onSurface
+                                        : Colors.transparent,
+                                    width: 2.5,
+                                  ),
+                                ),
+                                child: isSelected
+                                    ? Icon(
+                                        Icons.check,
+                                        size: 16,
+                                        color: CategoryColorHelper.getContrastingTextColor(color),
+                                      )
+                                    : null,
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final name = nameCtrl.text.trim();
+                  final price = double.tryParse(priceCtrl.text.trim()) ?? 0;
+                  var category = categoryCtrl.text.trim();
+                  if (category.isEmpty) category = 'General';
+                  final resolvedColor = selectedColorHex ??
+                      _resolvedCategoryColors[category] ??
+                      CategoryColorHelper.getUniqueColor(
+                        categoryName: category,
+                        usedColors: _resolvedCategoryColors.values.toSet(),
+                      );
+
+                  if (name.isNotEmpty && price > 0) {
+                    setState(() {
+                      if (isEditing) {
+                        final idx = _menu.indexWhere((m) => m.id == existingItem.id);
+                        if (idx != -1) {
+                          _menu[idx] = existingItem.copyWith(
+                            name: name,
+                            price: price,
+                            category: category,
+                            colorHex: resolvedColor,
+                          );
+                        }
+                      } else {
+                        _menu.add(MenuItem(
+                          id: DateTime.now().millisecondsSinceEpoch.toString(),
                           name: name,
                           price: price,
                           category: category,
-                        );
+                          colorHex: resolvedColor,
+                        ));
                       }
-                    } else {
-                      _menu.add(MenuItem(
-                        id: DateTime.now().millisecondsSinceEpoch.toString(),
-                        name: name,
-                        price: price,
-                        category: category,
-                      ));
-                    }
-                  });
-                  _saveState();
-                  Navigator.pop(ctx);
-                }
-              },
-              child: Text(isEditing ? 'Save Changes' : 'Add Item'),
-            ),
-          ],
-        ),
+                    });
+                    _saveState();
+                    Navigator.pop(ctx);
+                  }
+                },
+                child: Text(isEditing ? 'Save Changes' : 'Add Item'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -341,8 +513,23 @@ class _StallPosScreenState extends State<StallPosScreen>
                 item.name,
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
               ),
-              subtitle: Text(
-                '${item.category} • ₹${item.price.toStringAsFixed(0)}',
+              subtitle: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: item.colorHex != null
+                          ? Color(item.colorHex!)
+                          : _getCategoryColor(item.category),
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${item.category} • ₹${item.price.toStringAsFixed(0)}',
+                  ),
+                ],
               ),
               trailing: IconButton(
                 icon: const Icon(Icons.close),
@@ -541,6 +728,10 @@ class _StallPosScreenState extends State<StallPosScreen>
 
   Widget _buildMenuItemCard(MenuItem item) {
     final inCartQty = _cart[item.id] ?? 0;
+    final itemColor = item.colorHex != null
+        ? Color(item.colorHex!)
+        : _getCategoryColor(item.category);
+
     return InkWell(
       key: ValueKey(item.id),
       onTap: () => _addToCart(item),
@@ -549,60 +740,80 @@ class _StallPosScreenState extends State<StallPosScreen>
       child: Ink(
         decoration: BoxDecoration(
           color: inCartQty > 0
-              ? Theme.of(context).colorScheme.primaryContainer
+              ? itemColor.withValues(alpha: 0.18)
               : Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
             color: inCartQty > 0
-                ? Theme.of(context).colorScheme.primary
-                : Colors.transparent,
-            width: 2,
+                ? itemColor
+                : itemColor.withValues(alpha: 0.25),
+            width: inCartQty > 0 ? 2 : 1,
           ),
         ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Text(
-                item.name,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 16,
-                ),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-              const SizedBox(height: 5),
-              Text(
-                '₹${item.price.toStringAsFixed(0)}',
-                style: TextStyle(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                ),
-              ),
-              if (inCartQty > 0)
-                Container(
-                  margin: const EdgeInsets.only(top: 5),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    borderRadius: BorderRadius.circular(12),
+        child: Stack(
+          children: [
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                height: 4,
+                decoration: BoxDecoration(
+                  color: itemColor,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(13),
                   ),
-                  child: Text(
-                    '$inCartQty',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.onPrimary,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    item.name,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
                       fontWeight: FontWeight.bold,
-                      fontSize: 13,
+                      fontSize: 16,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    '₹${item.price.toStringAsFixed(0)}',
+                    style: TextStyle(
+                      color: inCartQty > 0
+                          ? itemColor
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
                     ),
                   ),
-                ),
-            ],
-          ),
+                  if (inCartQty > 0)
+                    Container(
+                      margin: const EdgeInsets.only(top: 5),
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: itemColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '$inCartQty',
+                        style: TextStyle(
+                          color: CategoryColorHelper.getContrastingTextColor(itemColor),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -625,15 +836,34 @@ class _StallPosScreenState extends State<StallPosScreen>
               itemBuilder: (context, i) {
                 final cat = categories[i];
                 final isSelected = _selectedCategory == cat;
+                final catColor = _getCategoryColor(cat);
                 return ChoiceChip(
+                  avatar: cat == 'All'
+                      ? null
+                      : Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: catColor,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
                   label: Text(
                     cat,
                     style: TextStyle(
                       fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
                       fontSize: 15,
+                      color: isSelected ? catColor : null,
                     ),
                   ),
                   selected: isSelected,
+                  selectedColor: catColor.withValues(alpha: 0.18),
+                  side: BorderSide(
+                    color: isSelected
+                        ? catColor
+                        : catColor.withValues(alpha: 0.35),
+                    width: isSelected ? 1.8 : 1,
+                  ),
                   onSelected: (selected) {
                     if (selected) {
                       setState(() => _selectedCategory = cat);
@@ -700,7 +930,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                                     width: 5,
                                     height: 22,
                                     decoration: BoxDecoration(
-                                      color: Theme.of(context).colorScheme.primary,
+                                      color: _getCategoryColor(entry.key),
                                       borderRadius: BorderRadius.circular(2),
                                     ),
                                   ),
@@ -718,19 +948,20 @@ class _StallPosScreenState extends State<StallPosScreen>
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: 10, vertical: 3),
                                     decoration: BoxDecoration(
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .surfaceContainerHighest,
+                                      color: _getCategoryColor(entry.key)
+                                          .withValues(alpha: 0.15),
                                       borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(
+                                        color: _getCategoryColor(entry.key)
+                                            .withValues(alpha: 0.3),
+                                      ),
                                     ),
                                     child: Text(
                                       '${entry.value.length}',
                                       style: TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.bold,
-                                        color: Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant,
+                                        color: _getCategoryColor(entry.key),
                                       ),
                                     ),
                                   ),
