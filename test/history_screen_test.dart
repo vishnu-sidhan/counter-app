@@ -39,8 +39,9 @@ void main() {
     expect(find.text('+1'), findsOneWidget);
     expect(find.text('Count: 1'), findsOneWidget);
 
-    // Verify filter chips
+    // Verify filter chips and action buttons
     expect(find.text('All Activity'), findsOneWidget);
+    expect(find.byTooltip('Download CSV'), findsOneWidget);
 
     // Test Clear History dialog
     expect(find.byTooltip('Clear History'), findsOneWidget);

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../controllers/counter_controller.dart';
 import '../data/models/counter_log_entry.dart';
+import '../services/csv_export_service.dart';
 
 /// Dedicated screen displaying the chronological history of counter interactions.
 class HistoryScreen extends StatelessWidget {
@@ -58,6 +59,43 @@ class HistoryScreen extends StatelessWidget {
           appBar: AppBar(
             title: const Text('Activity History'),
             actions: [
+              if (logs.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.download_rounded),
+                  tooltip: 'Download CSV',
+                  onPressed: () async {
+                    final activeCounter = selectedId != null
+                        ? allCounters.where((c) => c.id == selectedId).firstOrNull?.title
+                        : null;
+                    try {
+                      await CsvExportService.exportHistoryCsv(
+                        logs: logs,
+                        counterTitle: activeCounter,
+                      );
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              activeCounter != null
+                                  ? 'Exported CSV for "$activeCounter"'
+                                  : 'Exported CSV with ${logs.length} entries',
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Failed to export CSV: $e'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
               if (controller.logs.isNotEmpty)
                 IconButton(
                   icon: const Icon(Icons.delete_sweep_outlined),

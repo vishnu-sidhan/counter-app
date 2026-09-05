@@ -20,6 +20,10 @@ A modern, offline-first, ergonomic Multi-Counter and tally tracker built with Fl
   - Real-time search by title with quick-clear button.
   - Multi-criteria sorting: *Alphabetical* (default), *Recently Updated*, and *Highest Count*.
   - 10 curated color themes (Sapphire, Emerald, Sunset, Crimson, Violet, Teal, Amber, Rose, Indigo, Slate).
+- **Activity History & CSV Export:**
+  - Complete audit log tracking every tap (increment, decrement, reset) with timestamps and resulting counts.
+  - Filter activity feed by counter or view all events together.
+  - Instant CSV export/download with RFC 4180 compliance, working seamlessly across Web, Mobile, and Desktop.
 - **Safety & Recovery:**
   - Swipe-to-delete cards (`Dismissible`) with instant floating `UNDO` SnackBar.
   - Accidental reset prevention via confirmation dialog.
