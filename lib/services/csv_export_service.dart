@@ -58,7 +58,7 @@ class CsvExportService {
   /// Converts a list of [StallOrder] into a standard RFC 4180 CSV string.
   static String generateOrdersCsv(List<StallOrder> orders) {
     final buffer = StringBuffer();
-    buffer.writeln('Token,Timestamp,Date,Time,Status,Items Summary,Total Amount,Completed At');
+    buffer.writeln('Token,Timestamp,Date,Time,Status,Items Summary,Total Amount,Completed At,Customer Name,Payment Method');
 
     final dateFormat = DateFormat('yyyy-MM-dd');
     final timeFormat = DateFormat('h:mm:ss a');
@@ -69,6 +69,8 @@ class CsvExportService {
       final completedStr = order.completedAt != null
           ? order.completedAt!.toIso8601String()
           : '';
+      final safeCustomer = '"${order.displayCustomerName.replaceAll('"', '""')}"';
+      final safePayment = '"${(order.paymentMethod ?? 'Cash').replaceAll('"', '""')}"';
 
       buffer.writeln(
         '#${order.token},'
@@ -78,7 +80,9 @@ class CsvExportService {
         '$status,'
         '$safeSummary,'
         '${order.total.toStringAsFixed(2)},'
-        '$completedStr',
+        '$completedStr,'
+        '$safeCustomer,'
+        '$safePayment',
       );
     }
     return buffer.toString();

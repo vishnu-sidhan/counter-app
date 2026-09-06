@@ -29,7 +29,10 @@ void main() {
     await tester.tap(find.byTooltip('Add Menu Item'));
     await tester.pumpAndSettle();
 
-    final textFields = find.byType(TextField);
+    final textFields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
     await tester.enterText(textFields.at(0), 'Veg Roll');
     await tester.enterText(textFields.at(1), '80');
     await tester.enterText(textFields.at(2), 'Snacks');
@@ -53,8 +56,9 @@ void main() {
     await tester.tap(find.text('Veg Roll'));
     await tester.pumpAndSettle();
 
-    // Verify cart total updated to 160
+    // Verify cart total updated to 160 and cart chip shows category in brackets
     expect(find.text('PUNCH ORDER (#1) • ₹160'), findsOneWidget);
+    expect(find.text('2x Veg Roll (Snacks)'), findsOneWidget);
 
     // Tap 'Clear' button
     await tester.tap(find.text('Clear'));
@@ -186,7 +190,10 @@ void main() {
 
     tester.view.physicalSize = const Size(1000, 800);
     tester.view.devicePixelRatio = 1.0;
-    addTearDown(() => tester.view.resetPhysicalSize());
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
 
     await tester.pumpWidget(
       const MaterialApp(
@@ -202,16 +209,29 @@ void main() {
 
     expect(find.text('PUNCH ORDER (#1) • ₹160'), findsOneWidget);
 
-    // Fire the order
+    // Fire the order directly (no popup dialog)
     await tester.tap(find.text('PUNCH ORDER (#1) • ₹160'));
-    await tester.pump();
+    await tester.pumpAndSettle();
 
     // Cart cleared and next token is #2
     expect(find.text('TAP ITEMS TO START (#2)'), findsOneWidget);
 
     // On wide screen, Kitchen Queue is displayed side-by-side
     expect(find.text('#1'), findsOneWidget);
-    expect(find.text('1x Paneer Wrap, 1x Cold Coffee'), findsOneWidget);
+    expect(find.text('Paneer Wrap'), findsWidgets);
+    expect(find.text('Cold Coffee'), findsWidgets);
+    expect(find.text('To Confirm Payment'), findsOneWidget);
+    expect(find.text('Confirm Payment'), findsOneWidget);
+
+    // Tap Confirm Payment to pay
+    await tester.tap(find.text('Confirm Payment'));
+    await tester.pumpAndSettle();
+    expect(find.text('Order #1'), findsOneWidget);
+    await tester.tap(find.text('Confirm Payment & Complete'));
+    await tester.pumpAndSettle();
+
+    // Now order moves to Confirmed Payment Orders and has ✓ Done button
+    expect(find.text('Confirmed Payment Orders'), findsOneWidget);
     expect(find.text('✓ Done'), findsOneWidget);
 
     // Mark order as completed
@@ -300,7 +320,10 @@ void main() {
     await tester.tap(find.byTooltip('Add Menu Item'));
     await tester.pumpAndSettle();
 
-    var textFields = find.byType(TextField);
+    var textFields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
     await tester.enterText(textFields.at(0), 'Masala Tea');
     await tester.enterText(textFields.at(1), '20');
     await tester.enterText(textFields.at(2), 'Beverages');
@@ -312,7 +335,10 @@ void main() {
     await tester.tap(find.byTooltip('Add Menu Item'));
     await tester.pumpAndSettle();
 
-    textFields = find.byType(TextField);
+    textFields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
     await tester.enterText(textFields.at(0), 'Aloo Samosa');
     await tester.enterText(textFields.at(1), '30');
     await tester.enterText(textFields.at(2), 'Snacks');

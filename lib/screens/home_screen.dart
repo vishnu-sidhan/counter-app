@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../controllers/counter_controller.dart';
+import '../controllers/theme_controller.dart';
 import '../widgets/add_edit_counter_sheet.dart';
 import '../widgets/counter_card.dart';
 import '../widgets/csv_import_dialog.dart';
@@ -150,6 +151,22 @@ class HomeScreen extends StatelessWidget {
                 icon: const Icon(Icons.upload_file_rounded),
                 tooltip: 'Import Counters from CSV',
                 onPressed: () => _openCsvImport(context),
+              ),
+              ListenableBuilder(
+                listenable: ThemeController.instance,
+                builder: (context, _) {
+                  final isDark =
+                      Theme.of(context).brightness == Brightness.dark;
+                  return IconButton(
+                    icon: Icon(isDark
+                        ? Icons.light_mode_rounded
+                        : Icons.dark_mode_outlined),
+                    tooltip: isDark
+                        ? 'Switch to Light Theme'
+                        : 'Switch to Dark Theme',
+                    onPressed: () => ThemeController.instance.toggleTheme(),
+                  );
+                },
               ),
               if (totalCounters > 0)
                 Padding(

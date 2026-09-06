@@ -301,6 +301,45 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     );
   }
 
+  void _confirmDeleteOrder(int token) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Delete Order #$token?'),
+        content: Text('Delete Order #$token? This action cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final allOrders = await widget.storageService.loadOrders();
+              allOrders.removeWhere((o) => o.token == token);
+              await widget.storageService.saveOrders(allOrders);
+              await _loadOrders();
+              widget.onOrdersChanged?.call();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Order #$token deleted.'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildOrderCard(StallOrder order, ThemeData theme) {
     final dateFormat = DateFormat('MMM d, h:mm a');
     final timeStr = dateFormat.format(order.timestamp);
@@ -391,6 +430,39 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             ),
             const SizedBox(height: 8),
 
+            // Customer Name & Payment badge
+            Row(
+              children: [
+                Icon(
+                  order.customerName != null && order.customerName!.trim().isNotEmpty
+                      ? Icons.person
+                      : Icons.person_outline,
+                  size: 14,
+                  color: theme.colorScheme.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  order.displayCustomerName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                if (order.paymentMethod != null) ...[
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      order.paymentMethod!,
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+            const SizedBox(height: 6),
+
             // Items breakdown
             Text(
               order.itemsSummary,
@@ -398,13 +470,26 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             ),
             const SizedBox(height: 4),
 
-            // Timestamp
-            Text(
-              timeStr,
-              style: TextStyle(
-                fontSize: 11,
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+            // Timestamp & Delete button
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  timeStr,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 18),
+                  tooltip: 'Delete Order',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: () => _confirmDeleteOrder(order.token),
+                ),
+              ],
             ),
           ],
         ),
