@@ -40,12 +40,12 @@ void main() {
     await tester.tap(find.text('Add Item'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Veg Roll'), findsOneWidget);
+    expect(find.text('Veg Roll (Snacks)'), findsOneWidget);
     expect(find.text('₹80'), findsOneWidget);
     expect(find.text('Snacks'), findsWidgets);
 
     // Tap on 'Veg Roll' to add to cart
-    await tester.tap(find.text('Veg Roll'));
+    await tester.tap(find.text('Veg Roll (Snacks)'));
     await tester.pumpAndSettle();
 
     // Verify cart count badge (1) and button updated
@@ -53,7 +53,7 @@ void main() {
     expect(find.text('PUNCH ORDER (#1) • ₹80'), findsOneWidget);
 
     // Tap 'Veg Roll' again
-    await tester.tap(find.text('Veg Roll'));
+    await tester.tap(find.text('Veg Roll (Snacks)'));
     await tester.pumpAndSettle();
 
     // Verify cart total updated to 160 and cart chip shows category in brackets
@@ -83,8 +83,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Both items visible initially under 'All'
-    expect(find.text('Masala Chai'), findsOneWidget);
-    expect(find.text('Veg Samosa'), findsOneWidget);
+    expect(find.text('Masala Chai (Beverages)'), findsOneWidget);
+    expect(find.text('Veg Samosa (Snacks)'), findsOneWidget);
 
     // Category chips visible
     expect(find.text('All'), findsOneWidget);
@@ -96,23 +96,23 @@ void main() {
     await tester.pumpAndSettle();
 
     // Only Masala Chai should be visible
-    expect(find.text('Masala Chai'), findsOneWidget);
-    expect(find.text('Veg Samosa'), findsNothing);
+    expect(find.text('Masala Chai (Beverages)'), findsOneWidget);
+    expect(find.text('Veg Samosa (Snacks)'), findsNothing);
 
     // Tap 'Snacks' chip
     await tester.tap(find.widgetWithText(ChoiceChip, 'Snacks'));
     await tester.pumpAndSettle();
 
     // Only Veg Samosa should be visible
-    expect(find.text('Veg Samosa'), findsOneWidget);
-    expect(find.text('Masala Chai'), findsNothing);
+    expect(find.text('Veg Samosa (Snacks)'), findsOneWidget);
+    expect(find.text('Masala Chai (Beverages)'), findsNothing);
 
     // Switch back to 'All'
     await tester.tap(find.widgetWithText(ChoiceChip, 'All'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Masala Chai'), findsOneWidget);
-    expect(find.text('Veg Samosa'), findsOneWidget);
+    expect(find.text('Masala Chai (Beverages)'), findsOneWidget);
+    expect(find.text('Veg Samosa (Snacks)'), findsOneWidget);
   });
 
   testWidgets('StallPosScreen displays category split with headings and items in UI', (WidgetTester tester) async {
@@ -140,9 +140,9 @@ void main() {
     expect(find.text('1'), findsWidgets);
 
     // Verify all items are rendered under their respective sections
-    expect(find.text('Masala Chai'), findsOneWidget);
-    expect(find.text('Green Tea'), findsOneWidget);
-    expect(find.text('Paneer Roll'), findsOneWidget);
+    expect(find.text('Masala Chai (Hot Drinks)'), findsOneWidget);
+    expect(find.text('Green Tea (Hot Drinks)'), findsOneWidget);
+    expect(find.text('Paneer Roll (Snacks)'), findsOneWidget);
   });
 
   testWidgets('StallPosScreen allows deleting a menu item via long-press', (WidgetTester tester) async {
@@ -159,10 +159,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('Masala Chai'), findsOneWidget);
+    expect(find.text('Masala Chai (Beverages)'), findsOneWidget);
 
     // Long press on Masala Chai
-    await tester.longPress(find.text('Masala Chai'));
+    await tester.longPress(find.text('Masala Chai (Beverages)'));
     await tester.pumpAndSettle();
 
     // Bottom sheet should appear with Delete option
@@ -176,7 +176,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Menu should now be empty
-    expect(find.text('Masala Chai'), findsNothing);
+    expect(find.text('Masala Chai (Beverages)'), findsNothing);
     expect(find.text('No menu items yet'), findsOneWidget);
   });
 
@@ -203,8 +203,8 @@ void main() {
     await tester.pumpAndSettle();
 
     // Add Paneer Wrap and Cold Coffee
-    await tester.tap(find.text('Paneer Wrap'));
-    await tester.tap(find.text('Cold Coffee'));
+    await tester.tap(find.text('Paneer Wrap (Snacks)'));
+    await tester.tap(find.text('Cold Coffee (Beverages)'));
     await tester.pumpAndSettle();
 
     expect(find.text('PUNCH ORDER (#1) • ₹160'), findsOneWidget);
@@ -218,8 +218,8 @@ void main() {
 
     // On wide screen, Kitchen Queue is displayed side-by-side
     expect(find.text('#1'), findsOneWidget);
-    expect(find.text('Paneer Wrap'), findsWidgets);
-    expect(find.text('Cold Coffee'), findsWidgets);
+    expect(find.textContaining('Paneer Wrap'), findsWidgets);
+    expect(find.textContaining('Cold Coffee'), findsWidgets);
     expect(find.text('To Confirm Payment'), findsOneWidget);
     expect(find.text('Confirm Payment'), findsOneWidget);
 
@@ -295,14 +295,14 @@ void main() {
     await tester.pumpAndSettle();
 
     // Verify items and categories are loaded into menu
-    expect(find.text('Masala Chai'), findsOneWidget);
-    expect(find.text('Filter Coffee'), findsOneWidget);
-    expect(find.text('Veg Samosa'), findsOneWidget);
+    expect(find.text('Masala Chai (Beverages)'), findsOneWidget);
+    expect(find.text('Filter Coffee (Beverages)'), findsOneWidget);
+    expect(find.text('Veg Samosa (Snacks)'), findsOneWidget);
     expect(find.text('Beverages'), findsWidgets);
     expect(find.text('Snacks'), findsWidgets);
 
     // Tap on item to start order
-    await tester.tap(find.text('Masala Chai'));
+    await tester.tap(find.text('Masala Chai (Beverages)'));
     await tester.pumpAndSettle();
 
     expect(find.text('PUNCH ORDER (#1) • ₹20'), findsOneWidget);
@@ -360,7 +360,7 @@ void main() {
     expect(bevChip.avatar, isNotNull);
 
     // Verify category headings render with items count badge
-    expect(find.text('Masala Tea'), findsOneWidget);
-    expect(find.text('Aloo Samosa'), findsOneWidget);
+    expect(find.text('Masala Tea (Beverages)'), findsOneWidget);
+    expect(find.text('Aloo Samosa (Snacks)'), findsOneWidget);
   });
 }
