@@ -98,8 +98,164 @@ class OrderController extends ChangeNotifier {
   List<StallOrder> get toConfirmPaymentOrders =>
       activeOrders.where((o) => !o.isPaid && getPendingOrderItems(o).isNotEmpty).toList();
 
+  /// Maximum number of items of a specific add-on (or add-on variant) allowed per base item.
+  static const int maxPerAddonItem = 2;
+  static const int maxAddonsPerItem = maxPerAddonItem;
+
+  /// Returns the total number of add-ons currently attached to a cart item key.
+  int getAddonCount(String cartItemId) {
+    if (!cartItemId.contains('+')) return 0;
+    final parts = cartItemId.split('+');
+    return parts.length - 1;
+  }
+
+  /// Returns the count of a specific add-on (or specific variant of an add-on)
+  /// currently attached to a cart item key.
+  int getAddonItemCount(
+    String cartItemId,
+    String addonId, {
+    String? resolvedAddonName,
+  }) {
+    if (!cartItemId.contains('+')) return 0;
+
+    final targetVar = (resolvedAddonName != null && resolvedAddonName.trim().isNotEmpty)
+        ? resolvedAddonName.trim()
+        : null;
+
+    final breakdown = getCartItemBreakdown(cartItemId);
+    if (breakdown != null && targetVar != null) {
+      for (final d in breakdown.addonDetails) {
+        if (d.name.toLowerCase().trim() == targetVar.toLowerCase().trim()) {
+          return d.count;
+        }
+      }
+    }
+
+    final tokens = cartItemId.split('+').sublist(1);
+    int count = 0;
+    for (final token in tokens) {
+      if (targetVar != null) {
+        final expectedPrefix = '${addonId}_var_$targetVar';
+        if (token == expectedPrefix ||
+            token.startsWith('${expectedPrefix}_cat_') ||
+            token == targetVar) {
+          count++;
+        }
+      } else {
+        if (token == addonId ||
+            token.startsWith('${addonId}_cat_') ||
+            token.startsWith('${addonId}_var_')) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
+  /// Checks if the specified add-on can be added to the cart item without exceeding maxPerAddonItem.
+  bool canAddAddonItem(
+    String cartItemId,
+    MenuItem addon, {
+    String? resolvedAddonName,
+    int countToAdd = 1,
+  }) {
+    final current = getAddonItemCount(
+      cartItemId,
+      addon.id,
+      resolvedAddonName: resolvedAddonName,
+    );
+    return current + countToAdd <= maxPerAddonItem;
+  }
+
+  /// Checks if any available add-on in the menu can still be added to the cart item.
+  bool canAddAnyAddon(String cartItemId) {
+    final availableAddons = _menu.where((m) => m.effectiveIsAddon).toList();
+    if (availableAddons.isEmpty) return false;
+
+    for (final addon in availableAddons) {
+      if (addon.hasSlashNameVariants) {
+        for (final v in addon.slashNameVariants) {
+          if (getAddonItemCount(cartItemId, addon.id, resolvedAddonName: v) < maxPerAddonItem) {
+            return true;
+          }
+        }
+      } else {
+        if (getAddonItemCount(cartItemId, addon.id) < maxPerAddonItem) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Checks if more add-ons can be linked to the specified cart item.
+  bool canAddAddon(String cartItemId, [int countToAdd = 1]) {
+    return canAddAnyAddon(cartItemId);
+  }
+
   /// Total count of items in the current active cart.
   int get cartItemCount => _cart.values.fold(0, (a, b) => a + b);
+
+  /// Returns a breakdown of base item and add-ons for a composite cart item key.
+  /// Returns null if the item has no linked add-ons.
+  CartItemBreakdown? getCartItemBreakdown(String itemId) {
+    if (!itemId.contains('+')) return null;
+
+    final parts = itemId.split('+');
+    final baseId = parts[0];
+    final addonIds = parts.sublist(1);
+    final baseItem = findItem(baseId);
+
+    if (baseItem.id.isEmpty) return null;
+
+    final addonItems = <MenuItem>[];
+    for (final aId in addonIds) {
+      final addon = findItem(aId);
+      if (addon.id.isNotEmpty) {
+        addonItems.add(addon);
+      }
+    }
+
+    if (addonItems.isEmpty) return null;
+
+    final Map<String, ({int count, double singlePrice})> addonGroups = {};
+    for (final addon in addonItems) {
+      final existing = addonGroups[addon.name];
+      if (existing != null) {
+        addonGroups[addon.name] = (
+          count: existing.count + 1,
+          singlePrice: existing.singlePrice,
+        );
+      } else {
+        addonGroups[addon.name] = (
+          count: 1,
+          singlePrice: addon.price,
+        );
+      }
+    }
+
+    final addedPrice = addonGroups.values.fold(
+      0.0,
+      (sum, g) => sum + g.singlePrice * g.count,
+    );
+
+    final details = addonGroups.entries.map((entry) {
+      return CartItemAddonDetail(
+        name: entry.key,
+        count: entry.value.count,
+        singlePrice: entry.value.singlePrice,
+        totalPrice: entry.value.singlePrice * entry.value.count,
+      );
+    }).toList();
+
+    return CartItemBreakdown(
+      baseItem: baseItem,
+      basePrice: baseItem.price,
+      addonsPrice: addedPrice,
+      totalUnitPrice: baseItem.price + addedPrice,
+      addonDetails: details,
+    );
+  }
 
   /// Resolves an item by its ID.
   /// Handles base menu items, slash variant selections (e.g. itemId_var_option),
@@ -112,58 +268,22 @@ class OrderController extends ChangeNotifier {
 
     // 2. Composite items with add-ons (e.g. "baseItemId+addonId1")
     if (itemId.contains('+')) {
-      final parts = itemId.split('+');
-      final baseId = parts[0];
-      final addonIds = parts.sublist(1);
-      final baseItem = findItem(baseId);
+      final breakdown = getCartItemBreakdown(itemId);
+      if (breakdown != null) {
+        final prefix = breakdown.addonDetails.map((entry) {
+          final name = entry.name;
+          final count = entry.count;
+          return count > 1 ? '[$count' 'x $name]' : '[$name]';
+        }).join(' ');
 
-      if (baseItem.id.isNotEmpty) {
-        final addonItems = <MenuItem>[];
-        for (final aId in addonIds) {
-          final addon = findItem(aId);
-          if (addon.id.isNotEmpty) {
-            addonItems.add(addon);
-          }
-        }
-
-        if (addonItems.isNotEmpty) {
-          // Group add-ons by name and count occurrences to format as "x-times" if count > 1
-          final Map<String, ({int count, double singlePrice})> addonGroups = {};
-          for (final addon in addonItems) {
-            final existing = addonGroups[addon.name];
-            if (existing != null) {
-              addonGroups[addon.name] = (
-                count: existing.count + 1,
-                singlePrice: existing.singlePrice,
-              );
-            } else {
-              addonGroups[addon.name] = (
-                count: 1,
-                singlePrice: addon.price,
-              );
-            }
-          }
-
-          final prefix = addonGroups.entries.map((entry) {
-            final name = entry.key;
-            final count = entry.value.count;
-            return count > 1 ? '[$count' 'x $name]' : '[$name]';
-          }).join(' ');
-
-          final addedPrice = addonGroups.values.fold(
-            0.0,
-            (sum, g) => sum + g.singlePrice * g.count,
-          );
-
-          return MenuItem(
-            id: itemId,
-            name: '$prefix ${baseItem.name}',
-            price: baseItem.price + addedPrice,
-            category: baseItem.category,
-            colorHex: baseItem.colorHex,
-            isAddon: false,
-          );
-        }
+        return MenuItem(
+          id: itemId,
+          name: '$prefix ${breakdown.baseItem.name}',
+          price: breakdown.totalUnitPrice,
+          category: breakdown.baseItem.category,
+          colorHex: breakdown.baseItem.colorHex,
+          isAddon: false,
+        );
       }
     }
 
@@ -208,6 +328,33 @@ class OrderController extends ChangeNotifier {
     _cart.forEach((itemId, qty) {
       final item = findItem(itemId);
       total += item.price * qty;
+    });
+    return total;
+  }
+
+  /// Total cost of base items in the cart (excluding add-on surcharges).
+  double get cartBaseItemsTotal {
+    double total = 0.0;
+    _cart.forEach((itemId, qty) {
+      final breakdown = getCartItemBreakdown(itemId);
+      if (breakdown != null) {
+        total += breakdown.basePrice * qty;
+      } else {
+        final item = findItem(itemId);
+        total += item.price * qty;
+      }
+    });
+    return total;
+  }
+
+  /// Total cost of add-ons in the cart.
+  double get cartAddonsTotal {
+    double total = 0.0;
+    _cart.forEach((itemId, qty) {
+      final breakdown = getCartItemBreakdown(itemId);
+      if (breakdown != null) {
+        total += breakdown.addonsPrice * qty;
+      }
     });
     return total;
   }
@@ -494,6 +641,18 @@ class OrderController extends ChangeNotifier {
       );
     }
 
+    final currentAddonCount = getAddonItemCount(
+      targetCartItemId,
+      addon.id,
+      resolvedAddonName: resolvedAddonName,
+    );
+    if (currentAddonCount + quantity > maxPerAddonItem) {
+      final name = resolvedAddonName ?? addon.name;
+      throw StateError(
+        'Maximum $maxPerAddonItem [$name] allowed per item. Current: $currentAddonCount, trying to add: $quantity.',
+      );
+    }
+
     // Decrement the target base item in cart
     if (_cart[targetCartItemId]! > 1) {
       _cart[targetCartItemId] = _cart[targetCartItemId]! - 1;
@@ -532,6 +691,20 @@ class OrderController extends ChangeNotifier {
       throw StateError(
         'Cannot link add-on to an item not present in the active cart.',
       );
+    }
+
+    for (final item in validAddons) {
+      final currentAddonCount = getAddonItemCount(
+        targetCartItemId,
+        item.addon.id,
+        resolvedAddonName: item.resolvedName,
+      );
+      if (currentAddonCount + item.quantity > maxPerAddonItem) {
+        final name = item.resolvedName ?? item.addon.name;
+        throw StateError(
+          'Maximum $maxPerAddonItem [$name] allowed per item. Current: $currentAddonCount, trying to add: ${item.quantity}.',
+        );
+      }
     }
 
     // Decrement the target base item in cart

@@ -11,7 +11,7 @@ class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({
     super.key,
     required this.controller,
-    this.initialIndex = 0,
+    this.initialIndex = 1,
   });
 
   @override

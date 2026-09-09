@@ -608,15 +608,18 @@ void main() {
       expect(doubleAddonItem.price, 120.0);
       expect(doubleAddonItem.displayName, '[2x Extra Cheese] Veg Burger (Fast Food)');
 
-      // Link cheese a third time
-      controller.addAddonToCart(targetCartItemId: doubleAddonId, addon: cheese);
+      // Linking cheese a third time throws StateError because max 2 add-ons per item is enforced
+      expect(
+        () => controller.addAddonToCart(targetCartItemId: doubleAddonId, addon: cheese),
+        throwsA(isA<StateError>()),
+      );
       final tripleAddonId = '${burger.id}+${cheese.id}+${cheese.id}+${cheese.id}';
       final tripleAddonItem = controller.findItem(tripleAddonId);
       expect(tripleAddonItem.name, '[3x Extra Cheese] Veg Burger');
       expect(tripleAddonItem.price, 140.0);
     });
 
-    test('multiple different add-ons format properly with x-times for repeated ones', () async {
+    test('multiple different add-ons format properly with max 2 limit', () async {
       final burger = MenuItem(
         id: 'item_burger_multi',
         name: 'Veg Burger',
@@ -644,23 +647,43 @@ void main() {
 
       controller.addToCart(burger);
 
-      // Add 2x Cheese and 1x Mayo using addMultipleAddonsToCart
+      // Attempting to add 3x Cheese throws StateError (max per addon item is 2)
+      expect(
+        () => controller.addMultipleAddonsToCart(
+          targetCartItemId: burger.id,
+          addons: [
+            (addon: cheese, resolvedName: null, quantity: 3),
+          ],
+        ),
+        throwsA(isA<StateError>()),
+      );
+
+      // Adding 2x Cheese and 2x Mayo (4 add-ons total, max 2 of each) succeeds!
       controller.addMultipleAddonsToCart(
         targetCartItemId: burger.id,
         addons: [
           (addon: cheese, resolvedName: null, quantity: 2),
-          (addon: mayo, resolvedName: null, quantity: 1),
+          (addon: mayo, resolvedName: null, quantity: 2),
         ],
       );
 
-      final compositeId = '${burger.id}+${cheese.id}+${cheese.id}+${mayo.id}';
+      final compositeId = '${burger.id}+${cheese.id}+${cheese.id}+${mayo.id}+${mayo.id}';
       expect(controller.cart[compositeId], 1);
-      expect(controller.cartTotal, 145.0); // 80 + 25*2 + 15
+      expect(controller.cartTotal, 160.0); // 80 + 25*2 + 15*2 = 160
 
       final compositeItem = controller.findItem(compositeId);
-      expect(compositeItem.name, '[2x Cheese] [Mayo] Veg Burger');
-      expect(compositeItem.price, 145.0);
-      expect(compositeItem.displayName, '[2x Cheese] [Mayo] Veg Burger (Fast Food)');
+      expect(compositeItem.name, '[2x Cheese] [2x Mayo] Veg Burger');
+      expect(compositeItem.price, 160.0);
+      expect(compositeItem.displayName, '[2x Cheese] [2x Mayo] Veg Burger (Fast Food)');
+
+      // Attempting to add a 3rd Cheese to this composite item throws StateError
+      expect(
+        () => controller.addAddonToCart(
+          targetCartItemId: compositeId,
+          addon: cheese,
+        ),
+        throwsA(isA<StateError>()),
+      );
     });
 
     test('Rice / Noodles category is preserved intact as single category chip and grouped menu section', () async {
@@ -839,6 +862,45 @@ void main() {
       expect(finalSummary.length, 2);
       expect(finalSummary.any((a) => a.itemName.contains('Cheese') && a.itemName.contains('Burger')), isTrue);
       expect(finalSummary.any((a) => a.itemName == 'Masala Chai'), isTrue);
+    });
+
+    test('getCartItemBreakdown and cart totals calculate split between item and addons', () {
+      final controller = OrderController();
+      final burger = MenuItem(id: 'item_burger', name: 'Veg Burger', price: 80.0, category: 'Fast Food');
+      final cheese = MenuItem(id: 'item_cheese', name: 'Extra Cheese', price: 20.0, category: 'Addons', isAddon: true);
+      final mayo = MenuItem(id: 'item_mayo', name: 'Mayo', price: 15.0, category: 'Addons', isAddon: true);
+      final tea = MenuItem(id: 'item_tea', name: 'Tea', price: 10.0, category: 'Beverages');
+      controller.setMenu([burger, cheese, mayo, tea]);
+
+      // Standalone item breakdown is null
+      expect(controller.getCartItemBreakdown('item_burger'), isNull);
+
+      // Add burger with cheese + mayo
+      controller.addToCart(burger);
+      controller.addAddonToCart(targetCartItemId: 'item_burger', addon: cheese);
+      controller.addAddonToCart(targetCartItemId: 'item_burger+item_cheese', addon: mayo);
+      controller.addToCart(tea);
+
+      final compositeKey = 'item_burger+item_cheese+item_mayo';
+      final breakdown = controller.getCartItemBreakdown(compositeKey);
+      expect(breakdown, isNotNull);
+      expect(breakdown!.baseItem.name, 'Veg Burger');
+      expect(breakdown.basePrice, 80.0);
+      expect(breakdown.addonsPrice, 35.0);
+      expect(breakdown.totalUnitPrice, 115.0);
+      expect(breakdown.addonDetails.length, 2);
+      expect(breakdown.addonDetails[0].name, 'Extra Cheese');
+      expect(breakdown.addonDetails[0].totalPrice, 20.0);
+      expect(breakdown.addonDetails[1].name, 'Mayo');
+      expect(breakdown.addonDetails[1].totalPrice, 15.0);
+
+      // Cart totals split:
+      // Burger base: 80, Tea base: 10 => 90
+      // Addons: 35
+      // Total: 125
+      expect(controller.cartBaseItemsTotal, 90.0);
+      expect(controller.cartAddonsTotal, 35.0);
+      expect(controller.cartTotal, 125.0);
     });
   });
 }

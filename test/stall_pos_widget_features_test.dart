@@ -426,7 +426,8 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Tea / Coffee (Beverages)'), findsOneWidget);
-      expect(find.text('Options'), findsOneWidget);
+      // Requirement: Do not show the options UI badge on the screen for each item
+      expect(find.text('Options'), findsNothing);
 
       // Tap the card
       await tester.tap(find.text('Tea / Coffee (Beverages)'));
@@ -518,6 +519,13 @@ void main() {
 
       expect(find.text('[Extra Cheese] Veg Burger (Fast Food)'), findsOneWidget);
       expect(find.text('₹100 each'), findsOneWidget);
+
+      // Verify money split between item and addons
+      expect(find.text('Split: Item ₹80 + Add-on ₹20'), findsOneWidget);
+      expect(find.text('Extra Cheese (+₹20)'), findsOneWidget);
+      expect(find.text('Items Subtotal'), findsOneWidget);
+      expect(find.text('Add-ons Subtotal'), findsOneWidget);
+      expect(find.text('+₹20'), findsOneWidget);
     },
   );
 
@@ -616,6 +624,11 @@ void main() {
 
       expect(find.text('[2x Cheese] Schezwan Platter (Rice)'), findsOneWidget);
       expect(find.text('₹180 each'), findsOneWidget);
+      expect(find.text('Split: Item ₹130 + Add-ons ₹50'), findsOneWidget);
+      expect(find.text('2x Cheese (+₹50)'), findsOneWidget);
+      expect(find.text('Items Subtotal'), findsOneWidget);
+      expect(find.text('Add-ons Subtotal'), findsOneWidget);
+      expect(find.text('+₹50'), findsOneWidget);
 
       // 5. Punch order and verify on Active Orders
       await tester.tap(find.text('PUNCH ORDER (#101) • ₹180').first, warnIfMissed: false);
@@ -882,4 +895,172 @@ void main() {
       expect(find.textContaining('Veg Burger'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'Mobile web category card rendering below first card has no errors and no Options UI badge',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(390 * 3.0, 844 * 3.0);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      SharedPreferences.setMockInitialValues({
+        'stall_menu': jsonEncode([
+          {
+            'id': 'r1',
+            'name': 'Veg Manchuria',
+            'price': 130.0,
+            'category': 'Rolls',
+          },
+          {
+            'id': 'r2',
+            'name': 'Paneer',
+            'price': 150.0,
+            'category': 'Rolls',
+          },
+          {
+            'id': 's1',
+            'name': 'Veg Manchuria',
+            'price': 150.0,
+            'category': 'Starters',
+          },
+          {
+            'id': 's2',
+            'name': 'Chilli / Paneer 65',
+            'price': 200.0,
+            'category': 'Starters',
+          },
+          {
+            'id': 'rn1',
+            'name': 'Veg',
+            'price': 170.0,
+            'category': 'Rice/Noodles',
+          },
+        ]),
+        'stall_orders': jsonEncode([]),
+        'stall_next_token': 1,
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      // Verify no ErrorWidget anywhere on screen
+      expect(find.byType(ErrorWidget), findsNothing);
+
+      // Verify Category headers are displayed
+      expect(find.text('Rolls'), findsWidgets);
+      expect(find.text('Starters'), findsWidgets);
+      expect(find.text('Rice/Noodles'), findsWidgets);
+
+      // Verify items in the first card (Rolls)
+      expect(find.text('Veg Manchuria (Rolls)'), findsOneWidget);
+      expect(find.text('Paneer (Rolls)'), findsOneWidget);
+
+      // Verify items in the second card below first card (Starters)
+      expect(find.text('Veg Manchuria (Starters)'), findsOneWidget);
+      expect(find.text('Chilli / Paneer 65 (Starters)'), findsOneWidget);
+
+      // Verify requirement: Options badge is NOT shown on the screen for items with slash variants
+      expect(find.text('Options'), findsNothing);
+
+      // Verify collapsing and expanding the category card
+      await tester.tap(find.text('Starters').first);
+      await tester.pumpAndSettle();
+
+      // Tapping again expands
+      await tester.tap(find.text('Starters').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Chilli / Paneer 65 (Starters)'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Limits each add-on item to a maximum of 2 and allows multiple add-on types',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      SharedPreferences.setMockInitialValues({
+        'stall_menu': jsonEncode([
+          {
+            'id': 'item_burger',
+            'name': 'Veg Burger',
+            'price': 80.0,
+            'category': 'Fast Food',
+          },
+          {
+            'id': 'item_cheese',
+            'name': 'Extra Cheese',
+            'price': 20.0,
+            'category': 'Addons',
+            'isAddon': true,
+          },
+          {
+            'id': 'item_mayo',
+            'name': 'Mayo',
+            'price': 15.0,
+            'category': 'Addons',
+            'isAddon': true,
+          },
+        ]),
+        'stall_orders': jsonEncode([]),
+        'stall_next_token': 101,
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      // 1. Add Veg Burger to cart
+      await tester.tap(find.text('Veg Burger (Fast Food)').first);
+      await tester.pumpAndSettle();
+
+      // 2. Add first cheese (count: 1)
+      await tester.tap(find.text('Extra Cheese (Addons)').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Added [Extra Cheese] to Veg Burger (Fast Food)'), findsOneWidget);
+
+      // 3. Add second cheese (count: 2)
+      await tester.tap(find.text('Extra Cheese (Addons)').first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Added [Extra Cheese] to'), findsOneWidget);
+
+      // 4. Try to add third cheese (blocked by max 2 limit for Extra Cheese)
+      await tester.tap(find.text('Extra Cheese (Addons)').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Maximum 2 [Extra Cheese] already added to items in cart.'), findsOneWidget);
+
+      // 5. Add first Mayo (count: 1) - allowed because limit is per addon item!
+      await tester.tap(find.text('Mayo (Addons)').first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Added [Mayo] to'), findsOneWidget);
+
+      // 6. Add second Mayo (count: 2)
+      await tester.tap(find.text('Mayo (Addons)').first);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Added [Mayo] to'), findsOneWidget);
+
+      // 7. Try to add third Mayo (blocked by max 2 limit for Mayo)
+      await tester.tap(find.text('Mayo (Addons)').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Maximum 2 [Mayo] already added to items in cart.'), findsOneWidget);
+
+      // 8. Open Review Cart bottom sheet
+      await tester.tap(find.text('View Cart'));
+      await tester.pumpAndSettle();
+
+      // Verify Review Cart displays 'Max Extras (2/2)' badge because all available add-ons are maxed out
+      expect(find.text('Max Extras (2/2)'), findsOneWidget);
+      expect(find.text('+ Extras / Add-on'), findsNothing);
+      expect(find.text('Split: Item ₹80 + Add-ons ₹70'), findsOneWidget);
+      expect(find.textContaining('2x Extra Cheese (+₹40)'), findsOneWidget);
+      expect(find.textContaining('2x Mayo (+₹30)'), findsOneWidget);
+    },
+  );
 }
+

@@ -295,3 +295,37 @@ class AggregatedOrderItem {
   }
 }
 
+/// Represents an individual add-on entry in an item's breakdown.
+class CartItemAddonDetail {
+  final String name;
+  final int count;
+  final double singlePrice;
+  final double totalPrice;
+
+  const CartItemAddonDetail({
+    required this.name,
+    required this.count,
+    required this.singlePrice,
+    required this.totalPrice,
+  });
+}
+
+/// Represents the monetary breakdown between a base item and its linked add-ons.
+class CartItemBreakdown {
+  final MenuItem baseItem;
+  final double basePrice;
+  final double addonsPrice;
+  final double totalUnitPrice;
+  final List<CartItemAddonDetail> addonDetails;
+
+  const CartItemBreakdown({
+    required this.baseItem,
+    required this.basePrice,
+    required this.addonsPrice,
+    required this.totalUnitPrice,
+    required this.addonDetails,
+  });
+
+  bool get hasAddons => addonsPrice > 0 || addonDetails.isNotEmpty;
+}
+

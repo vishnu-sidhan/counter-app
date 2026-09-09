@@ -19,11 +19,13 @@ void main() async {
 class MultiCounterApp extends StatelessWidget {
   final CounterController controller;
   final ThemeController? themeController;
+  final int initialIndex;
 
   const MultiCounterApp({
     super.key,
     required this.controller,
     this.themeController,
+    this.initialIndex = 1,
   });
 
   @override
@@ -39,7 +41,10 @@ class MultiCounterApp extends StatelessWidget {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: themeCtrl.themeMode,
-          home: MainNavigationScreen(controller: controller),
+          home: MainNavigationScreen(
+            controller: controller,
+            initialIndex: initialIndex,
+          ),
         );
       },
     );

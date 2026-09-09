@@ -32,6 +32,7 @@ class _StallPosScreenState extends State<StallPosScreen>
   late TabController _mobileTabController;
   late TabController _desktopTabController;
   final TextEditingController _customerNameController = TextEditingController();
+  final Set<String> _collapsedCategories = <String>{};
   Timer? _timer;
 
   @override
@@ -160,14 +161,39 @@ class _StallPosScreenState extends State<StallPosScreen>
         return;
       }
 
-      // If addon has slash variants (e.g. Cheese / Mayo) OR multiple base items in cart
-      if (item.hasAnySlashVariants || baseItems.length > 1) {
+      final eligibleBaseItems = baseItems.where((b) {
+        if (item.hasSlashNameVariants) {
+          return item.slashNameVariants.any((v) =>
+              _controller.getAddonItemCount(b.id, item.id, resolvedAddonName: v) <
+              OrderController.maxPerAddonItem);
+        }
+        return _controller.getAddonItemCount(b.id, item.id) <
+            OrderController.maxPerAddonItem;
+      }).toList();
+
+      if (eligibleBaseItems.isEmpty) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Maximum 2 [${item.name}] already added to items in cart.',
+            ),
+            backgroundColor: Colors.deepOrange,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      // If addon has slash variants (e.g. Cheese / Mayo) OR multiple eligible base items in cart
+      if (item.hasAnySlashVariants || eligibleBaseItems.length > 1) {
         _showCentralizedSlashSelectionModal(item);
         return;
       }
 
-      // Single base item & no slash in addon
-      final target = baseItems.first;
+      // Single eligible base item & no slash in addon
+      final target = eligibleBaseItems.first;
       _controller.addAddonToCart(
         targetCartItemId: target.id,
         addon: item,
@@ -199,7 +225,17 @@ class _StallPosScreenState extends State<StallPosScreen>
     final nameVariants = item.slashNameVariants;
     final hasCategoryVariants = item.hasSlashCategoryVariants;
     final categoryVariants = item.slashCategoryVariants;
-    final baseItems = isAddon ? _controller.cartBaseItems : <MenuItem>[];
+    final baseItems = isAddon
+        ? _controller.cartBaseItems.where((b) {
+            if (hasNameVariants) {
+              return nameVariants.any((v) =>
+                  _controller.getAddonItemCount(b.id, item.id, resolvedAddonName: v) <
+                  OrderController.maxPerAddonItem);
+            }
+            return _controller.getAddonItemCount(b.id, item.id) <
+                OrderController.maxPerAddonItem;
+          }).toList()
+        : <MenuItem>[];
 
     // Add-on state: quantity stepper or multi-variant quantities
     int singleAddonQty = 1;
@@ -224,6 +260,11 @@ class _StallPosScreenState extends State<StallPosScreen>
         return StatefulBuilder(
           builder: (modalContext, setModalState) {
             final target = selectedBaseItem ?? (baseItems.isNotEmpty ? baseItems.first : null);
+            final existingSingleAddonCount = target != null
+                ? _controller.getAddonItemCount(target.id, item.id)
+                : 0;
+            final maxAllowedForSingleAddon = (OrderController.maxPerAddonItem - existingSingleAddonCount)
+                .clamp(0, OrderController.maxPerAddonItem);
 
             // Calculate total add-on count and cost for dynamic preview
             int totalAddonCount = 0;
@@ -323,6 +364,11 @@ class _StallPosScreenState extends State<StallPosScreen>
                               const SizedBox(height: 8),
                               ...nameVariants.map((variant) {
                                 final qty = variantQuantities[variant] ?? 0;
+                                final existingForVariant = target != null
+                                    ? _controller.getAddonItemCount(target.id, item.id, resolvedAddonName: variant)
+                                    : 0;
+                                final maxForVariant = (OrderController.maxPerAddonItem - existingForVariant)
+                                    .clamp(0, OrderController.maxPerAddonItem);
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 8),
                                   padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
@@ -399,12 +445,14 @@ class _StallPosScreenState extends State<StallPosScreen>
                                               icon: const Icon(Icons.add, size: 16),
                                               padding: EdgeInsets.zero,
                                               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                                              onPressed: () {
-                                                setModalState(() {
-                                                  variantQuantities[variant] = qty + 1;
-                                                });
-                                                HapticFeedback.selectionClick();
-                                              },
+                                              onPressed: qty < maxForVariant
+                                                  ? () {
+                                                      setModalState(() {
+                                                        variantQuantities[variant] = qty + 1;
+                                                      });
+                                                      HapticFeedback.selectionClick();
+                                                    }
+                                                  : null,
                                             ),
                                           ],
                                         ),
@@ -497,12 +545,14 @@ class _StallPosScreenState extends State<StallPosScreen>
                                             icon: const Icon(Icons.add, size: 16),
                                             padding: EdgeInsets.zero,
                                             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-                                            onPressed: () {
-                                              setModalState(() {
-                                                singleAddonQty++;
-                                              });
-                                              HapticFeedback.selectionClick();
-                                            },
+                                            onPressed: singleAddonQty < maxAllowedForSingleAddon
+                                                ? () {
+                                                    setModalState(() {
+                                                      singleAddonQty++;
+                                                    });
+                                                    HapticFeedback.selectionClick();
+                                                  }
+                                                : null,
                                           ),
                                         ],
                                       ),
@@ -970,7 +1020,8 @@ class _StallPosScreenState extends State<StallPosScreen>
           builder: (context, setSheetState) {
             final cartEntries = _cart.entries.map((e) {
               final item = _controller.findItem(e.key);
-              return (item: item, quantity: e.value);
+              final breakdown = _controller.getCartItemBreakdown(e.key);
+              return (item: item, quantity: e.value, breakdown: breakdown);
             }).toList();
 
             return Container(
@@ -1090,6 +1141,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                             final entry = cartEntries[i];
                             final item = entry.item;
                             final qty = entry.quantity;
+                            final breakdown = entry.breakdown;
                             final catColor = item.colorHex != null
                                 ? Color(item.colorHex!)
                                 : _getCategoryColor(item.category);
@@ -1101,7 +1153,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                                 // Category Color indicator
                                 Container(
                                   width: 4,
-                                  height: 38,
+                                  height: breakdown != null ? 54 : 38,
                                   decoration: BoxDecoration(
                                     color: catColor,
                                     borderRadius: BorderRadius.circular(2),
@@ -1132,20 +1184,98 @@ class _StallPosScreenState extends State<StallPosScreen>
                                           ).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
+                                      if (breakdown != null) ...[
+                                        const SizedBox(height: 3),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 7,
+                                            vertical: 3,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primaryContainer
+                                                .withAlpha(60),
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: Theme.of(context)
+                                                  .colorScheme
+                                                  .primary
+                                                  .withAlpha(80),
+                                              width: 0.8,
+                                            ),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.call_split_rounded,
+                                                    size: 12,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .primary,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'Split: Item ₹${breakdown.basePrice.toStringAsFixed(0)} + Add-on${breakdown.addonDetails.length > 1 || breakdown.addonDetails.any((d) => d.count > 1) ? "s" : ""} ₹${breakdown.addonsPrice.toStringAsFixed(0)}',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight:
+                                                          FontWeight.bold,
+                                                      color: Theme.of(context)
+                                                          .colorScheme
+                                                          .primary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              if (breakdown.addonDetails.isNotEmpty) ...[
+                                                const SizedBox(height: 1),
+                                                Text(
+                                                  breakdown.addonDetails.map((d) {
+                                                    final prefix = d.count > 1 ? '${d.count}x ' : '';
+                                                    return '$prefix${d.name} (+₹${d.totalPrice.toStringAsFixed(0)})';
+                                                  }).join(', '),
+                                                  style: TextStyle(
+                                                    fontSize: 10.5,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .onSurfaceVariant,
+                                                  ),
+                                                ),
+                                              ],
+                                              if (qty > 1) ...[
+                                                const SizedBox(height: 2),
+                                                Text(
+                                                  'Total ($qty qty): Item ₹${(breakdown.basePrice * qty).toStringAsFixed(0)} + Add-ons ₹${(breakdown.addonsPrice * qty).toStringAsFixed(0)}',
+                                                  style: TextStyle(
+                                                    fontSize: 10,
+                                                    fontWeight: FontWeight.w500,
+                                                    color: Theme.of(context)
+                                                        .colorScheme
+                                                        .outline,
+                                                  ),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ],
                                       if (_controller.menu.any((m) => m.effectiveIsAddon)) ...[
                                         const SizedBox(height: 4),
-                                        InkWell(
-                                          onTap: () {
-                                            _showAddonsForCartItemModal(item.id, () => setSheetState(() {}));
-                                          },
-                                          borderRadius: BorderRadius.circular(6),
-                                          child: Container(
+                                        if (!_controller.canAddAnyAddon(item.id))
+                                          Container(
                                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                                             decoration: BoxDecoration(
-                                              color: Theme.of(context).colorScheme.primaryContainer.withAlpha(90),
+                                              color: Theme.of(context).colorScheme.surfaceContainerHighest,
                                               borderRadius: BorderRadius.circular(6),
                                               border: Border.all(
-                                                color: Theme.of(context).colorScheme.primary.withAlpha(100),
+                                                color: Theme.of(context).colorScheme.outlineVariant.withAlpha(120),
                                                 width: 0.8,
                                               ),
                                             ),
@@ -1153,23 +1283,59 @@ class _StallPosScreenState extends State<StallPosScreen>
                                               mainAxisSize: MainAxisSize.min,
                                               children: [
                                                 Icon(
-                                                  Icons.add_circle_outline,
+                                                  Icons.check_circle_outline,
                                                   size: 13,
-                                                  color: Theme.of(context).colorScheme.primary,
+                                                  color: Theme.of(context).colorScheme.outline,
                                                 ),
                                                 const SizedBox(width: 4),
                                                 Text(
-                                                  '+ Extras / Add-on',
+                                                  'Max Extras (2/2)',
                                                   style: TextStyle(
                                                     fontSize: 11,
-                                                    fontWeight: FontWeight.bold,
-                                                    color: Theme.of(context).colorScheme.primary,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Theme.of(context).colorScheme.outline,
                                                   ),
                                                 ),
                                               ],
                                             ),
+                                          )
+                                        else
+                                          InkWell(
+                                            onTap: () {
+                                              _showAddonsForCartItemModal(item.id, () => setSheetState(() {}));
+                                            },
+                                            borderRadius: BorderRadius.circular(6),
+                                            child: Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Theme.of(context).colorScheme.primaryContainer.withAlpha(90),
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(
+                                                  color: Theme.of(context).colorScheme.primary.withAlpha(100),
+                                                  width: 0.8,
+                                                ),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.add_circle_outline,
+                                                    size: 13,
+                                                    color: Theme.of(context).colorScheme.primary,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    '+ Extras / Add-on',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: Theme.of(context).colorScheme.primary,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
                                           ),
-                                        ),
                                       ],
                                     ],
                                   ),
@@ -1265,6 +1431,64 @@ class _StallPosScreenState extends State<StallPosScreen>
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
+                            // Optional breakdown if cart contains any add-ons
+                            if (_controller.cartAddonsTotal > 0) ...[
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Items Subtotal',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  Text(
+                                    '₹${_controller.cartBaseItemsTotal.toStringAsFixed(0)}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    'Add-ons Subtotal',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurfaceVariant,
+                                    ),
+                                  ),
+                                  Text(
+                                    '+₹${_controller.cartAddonsTotal.toStringAsFixed(0)}',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              const Divider(height: 1),
+                              const SizedBox(height: 8),
+                            ],
+
                             // Total row
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1344,6 +1568,19 @@ class _StallPosScreenState extends State<StallPosScreen>
         _controller.menu.where((m) => m.effectiveIsAddon).toList();
     if (availableAddons.isEmpty) return;
 
+    if (!_controller.canAddAnyAddon(cartItemId)) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Maximum 2 per add-on already reached for this item.'),
+          backgroundColor: Colors.deepOrange,
+          behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     final Map<String, int> selectedQuantities = {};
 
     showModalBottomSheet(
@@ -1414,7 +1651,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'For: ${cartItem.displayName}',
+                      'For: ${cartItem.displayName} • Max 2 per add-on',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.onSurfaceVariant,
                         fontSize: 14,
@@ -1429,28 +1666,55 @@ class _StallPosScreenState extends State<StallPosScreen>
                           for (final addon in availableAddons) ...[
                             if (addon.hasSlashNameVariants)
                               for (final v in addon.slashNameVariants) ...[
-                                _buildAddonQuantityRow(
-                                  title: v,
-                                  price: addon.price,
-                                  qty: selectedQuantities['${addon.id}_var_$v'] ?? 0,
-                                  onChanged: (q) {
-                                    setModalState(() {
-                                      selectedQuantities['${addon.id}_var_$v'] = q;
-                                    });
-                                  },
-                                ),
+                                () {
+                                  final existingCount = _controller.getAddonItemCount(
+                                    cartItemId,
+                                    addon.id,
+                                    resolvedAddonName: v,
+                                  );
+                                  final remainingForVariant = (OrderController.maxPerAddonItem - existingCount)
+                                      .clamp(0, OrderController.maxPerAddonItem);
+                                  final currentQty = selectedQuantities['${addon.id}_var_$v'] ?? 0;
+                                  return _buildAddonQuantityRow(
+                                    title: v,
+                                    price: addon.price,
+                                    qty: currentQty,
+                                    canIncrement: currentQty < remainingForVariant,
+                                    subtitle: remainingForVariant == 0
+                                        ? '+₹${addon.price.toStringAsFixed(0)} each • Max reached'
+                                        : (existingCount > 0 ? '+₹${addon.price.toStringAsFixed(0)} each ($existingCount added)' : null),
+                                    onChanged: (q) {
+                                      setModalState(() {
+                                        selectedQuantities['${addon.id}_var_$v'] = q;
+                                      });
+                                    },
+                                  );
+                                }(),
                               ]
                             else ...[
-                              _buildAddonQuantityRow(
-                                title: addon.name,
-                                price: addon.price,
-                                qty: selectedQuantities[addon.id] ?? 0,
-                                onChanged: (q) {
-                                  setModalState(() {
-                                    selectedQuantities[addon.id] = q;
-                                  });
-                                },
-                              ),
+                              () {
+                                final existingCount = _controller.getAddonItemCount(
+                                  cartItemId,
+                                  addon.id,
+                                );
+                                final remainingForAddon = (OrderController.maxPerAddonItem - existingCount)
+                                    .clamp(0, OrderController.maxPerAddonItem);
+                                final currentQty = selectedQuantities[addon.id] ?? 0;
+                                return _buildAddonQuantityRow(
+                                  title: addon.name,
+                                  price: addon.price,
+                                  qty: currentQty,
+                                  canIncrement: currentQty < remainingForAddon,
+                                  subtitle: remainingForAddon == 0
+                                      ? '+₹${addon.price.toStringAsFixed(0)} each • Max reached'
+                                      : (existingCount > 0 ? '+₹${addon.price.toStringAsFixed(0)} each ($existingCount added)' : null),
+                                  onChanged: (q) {
+                                    setModalState(() {
+                                      selectedQuantities[addon.id] = q;
+                                    });
+                                  },
+                                );
+                              }(),
                             ],
                           ],
                         ],
@@ -1518,7 +1782,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                       child: Text(
                         totalCount > 0
                             ? 'Add ${parts.map((p) => '[$p]').join(' ')} • +₹${totalAdded.toStringAsFixed(0)}'
-                            : 'Select extras to add',
+                            : 'Select extras to add (max 2 each)',
                         style: const TextStyle(
                             fontWeight: FontWeight.bold, fontSize: 15),
                       ),
@@ -1538,6 +1802,8 @@ class _StallPosScreenState extends State<StallPosScreen>
     required double price,
     required int qty,
     required ValueChanged<int> onChanged,
+    bool canIncrement = true,
+    String? subtitle,
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1568,7 +1834,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                   ),
                 ),
                 Text(
-                  '+₹${price.toStringAsFixed(0)} each',
+                  subtitle ?? '+₹${price.toStringAsFixed(0)} each',
                   style: TextStyle(
                     fontSize: 12,
                     color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1611,7 +1877,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                   padding: EdgeInsets.zero,
                   constraints:
                       const BoxConstraints(minWidth: 32, minHeight: 32),
-                  onPressed: () => onChanged(qty + 1),
+                  onPressed: canIncrement ? () => onChanged(qty + 1) : null,
                 ),
               ],
             ),
@@ -2290,13 +2556,13 @@ class _StallPosScreenState extends State<StallPosScreen>
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Center(
               child: Text(
                 'Orders: ${_controller.orders.length} | ₹${totalRevenue.toStringAsFixed(0)}',
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 13,
+                  fontSize: 12,
                 ),
               ),
             ),
@@ -2304,16 +2570,25 @@ class _StallPosScreenState extends State<StallPosScreen>
           IconButton(
             icon: const Icon(Icons.receipt_long_rounded),
             tooltip: 'Order History',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             onPressed: _openOrderHistory,
           ),
           IconButton(
             icon: const Icon(Icons.upload_file_rounded),
             tooltip: 'Upload Menu CSV',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             onPressed: _openCsvImport,
           ),
           IconButton(
             icon: const Icon(Icons.add),
             tooltip: 'Add Menu Item',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             onPressed: () => _showAddOrEditItemDialog(),
           ),
           ListenableBuilder(
@@ -2327,6 +2602,9 @@ class _StallPosScreenState extends State<StallPosScreen>
                 tooltip: isDark
                     ? 'Switch to Light Theme'
                     : 'Switch to Dark Theme',
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 onPressed: () => ThemeController.instance.toggleTheme(),
               );
             },
@@ -2502,27 +2780,6 @@ class _StallPosScreenState extends State<StallPosScreen>
                           fontSize: 10,
                         ),
                       ),
-                    )
-                  else if (item.hasAnySlashVariants)
-                    Container(
-                      margin: const EdgeInsets.only(bottom: 4),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 7,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: itemColor.withAlpha(35),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: itemColor, width: 1),
-                      ),
-                      child: Text(
-                        'Options',
-                        style: TextStyle(
-                          color: itemColor,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 10,
-                        ),
-                      ),
                     ),
                   Text(
                     item.displayName,
@@ -2574,6 +2831,164 @@ class _StallPosScreenState extends State<StallPosScreen>
     ),
   ),
 );
+  }
+
+  Widget _buildCategoryAccordionCard(String catName, List<MenuItem> items) {
+    final catColor = _getCategoryColor(catName);
+    final isExpanded = !_collapsedCategories.contains(catName);
+
+    return Card(
+      key: PageStorageKey('pos_category_$catName'),
+      elevation: 0,
+      margin: const EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: 6,
+      ),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: catColor.withAlpha(60),
+          width: 1.2,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Header
+          InkWell(
+            onTap: () {
+              setState(() {
+                if (isExpanded) {
+                  _collapsedCategories.add(catName);
+                } else {
+                  _collapsedCategories.remove(catName);
+                }
+              });
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 12,
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 6,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: catColor,
+                      borderRadius: BorderRadius.circular(3),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      catName,
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.2,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: catColor.withAlpha(35),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: catColor.withAlpha(90)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${items.length}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: catColor,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          items.length == 1 ? 'item' : 'items',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold,
+                            color: catColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  AnimatedRotation(
+                    turns: isExpanded ? 0.0 : -0.25,
+                    duration: const Duration(milliseconds: 200),
+                    child: Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      color: catColor,
+                      size: 24,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Collapsible Content
+          AnimatedCrossFade(
+            firstChild: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final availableWidth = constraints.maxWidth.isFinite &&
+                          constraints.maxWidth > 0
+                      ? constraints.maxWidth
+                      : (MediaQuery.of(context).size.width - 24);
+                  const double maxExtent = 165.0;
+                  const double spacing = 12.0;
+                  const double childAspectRatio = 0.98;
+                  int crossAxisCount =
+                      (availableWidth / (maxExtent + spacing)).ceil();
+                  crossAxisCount = crossAxisCount < 1 ? 1 : crossAxisCount;
+                  final double usableWidth = math.max(
+                    0.0,
+                    availableWidth - spacing * (crossAxisCount - 1),
+                  );
+                  final double childWidth = usableWidth / crossAxisCount;
+                  final double childHeight = childWidth / childAspectRatio;
+
+                  return Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    children: items.map((menuItem) {
+                      return SizedBox(
+                        width: childWidth,
+                        height: childHeight,
+                        child: _buildMenuItemCard(menuItem),
+                      );
+                    }).toList(),
+                  );
+                },
+              ),
+            ),
+            secondChild: const SizedBox.shrink(),
+            crossFadeState: isExpanded
+                ? CrossFadeState.showFirst
+                : CrossFadeState.showSecond,
+            duration: const Duration(milliseconds: 250),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildTakeOrderPanel() {
@@ -2680,123 +3095,9 @@ class _StallPosScreenState extends State<StallPosScreen>
               : SingleChildScrollView(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: grouped.entries.map((entry) {
-                      final catName = entry.key;
-                      final items = entry.value;
-                      final catColor = _getCategoryColor(catName);
-
-                      return Card(
-                        elevation: 0,
-                        margin: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 6,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          side: BorderSide(
-                            color: catColor.withAlpha(60),
-                            width: 1.2,
-                          ),
-                        ),
-                        clipBehavior: Clip.antiAlias,
-                        child: ExpansionTile(
-                          key: PageStorageKey('pos_category_$catName'),
-                          initiallyExpanded: true,
-                          maintainState: true,
-                          leading: Container(
-                            width: 6,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              color: catColor,
-                              borderRadius: BorderRadius.circular(3),
-                            ),
-                          ),
-                          title: Text(
-                            catName,
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                              letterSpacing: 0.2,
-                            ),
-                          ),
-                          trailing: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: catColor.withAlpha(35),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: catColor.withAlpha(90)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  '${items.length}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: catColor,
-                                  ),
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  items.length == 1 ? 'item' : 'items',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.bold,
-                                    color: catColor,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          childrenPadding: const EdgeInsets.fromLTRB(
-                            12,
-                            4,
-                            12,
-                            12,
-                          ),
-                          children: [
-                            LayoutBuilder(
-                              builder: (context, constraints) {
-                                const double maxExtent = 165.0;
-                                const double spacing = 12.0;
-                                const double childAspectRatio = 0.98;
-                                int crossAxisCount =
-                                    (constraints.maxWidth /
-                                            (maxExtent + spacing))
-                                        .ceil();
-                                crossAxisCount = crossAxisCount < 1
-                                    ? 1
-                                    : crossAxisCount;
-                                final double usableWidth = math.max(
-                                  0.0,
-                                  constraints.maxWidth -
-                                      spacing * (crossAxisCount - 1),
-                                );
-                                final double childWidth =
-                                    usableWidth / crossAxisCount;
-                                final double childHeight =
-                                    childWidth / childAspectRatio;
-
-                                return Wrap(
-                                  spacing: spacing,
-                                  runSpacing: spacing,
-                                  children: items.map((menuItem) {
-                                    return SizedBox(
-                                      width: childWidth,
-                                      height: childHeight,
-                                      child: _buildMenuItemCard(menuItem),
-                                    );
-                                  }).toList(),
-                                );
-                              },
-                            ),
-                          ],
-                        ),
-                      );
+                      return _buildCategoryAccordionCard(entry.key, entry.value);
                     }).toList(),
                   ),
                 ),

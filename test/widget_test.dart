@@ -13,7 +13,7 @@ void main() {
     final controller = CounterController(storageService: storageService);
     await controller.init();
 
-    await tester.pumpWidget(MultiCounterApp(controller: controller));
+    await tester.pumpWidget(MultiCounterApp(controller: controller, initialIndex: 0));
     await tester.pumpAndSettle();
 
     // Verify empty state is displayed initially
@@ -60,7 +60,7 @@ void main() {
     expect(find.widgetWithText(AppBar, 'Counters'), findsOneWidget);
   });
 
-  testWidgets('HomeScreen imports counters from CSV via AppBar action', (WidgetTester tester) async {
+  testWidgets('MultiCounterApp defaults to Stall POS tab', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storageService = CounterStorageService(prefs: prefs);
@@ -68,6 +68,19 @@ void main() {
     await controller.init();
 
     await tester.pumpWidget(MultiCounterApp(controller: controller));
+    await tester.pumpAndSettle();
+
+    expect(find.text('⚡ StallPOS'), findsOneWidget);
+  });
+
+  testWidgets('HomeScreen imports counters from CSV via AppBar action', (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues({});
+    final prefs = await SharedPreferences.getInstance();
+    final storageService = CounterStorageService(prefs: prefs);
+    final controller = CounterController(storageService: storageService);
+    await controller.init();
+
+    await tester.pumpWidget(MultiCounterApp(controller: controller, initialIndex: 0));
     await tester.pumpAndSettle();
 
     // Verify CSV import action exists in AppBar
