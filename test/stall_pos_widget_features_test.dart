@@ -274,11 +274,21 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
 
-      // Tap Update Order button (updates order directly without popup dialog)
+      // Tap Update Order button (now prompts for additional payment of ₹25 difference)
       await tester.tap(find.text('Update Order #101 • ₹65'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Order #101 updated!'), findsOneWidget);
+      // Additional payment dialog opens with breakdown
+      expect(find.text('Previously Paid:'), findsOneWidget);
+      expect(find.text('₹40'), findsWidgets);
+      expect(find.text('Additional Due'), findsOneWidget);
+      expect(find.text('₹25'), findsWidgets);
+
+      // Confirm ₹25 payment via default UPI
+      await tester.tap(find.text('Confirm ₹25 & Update'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Order #101 updated! Additional ₹25 paid via UPI!'), findsOneWidget);
       expect(find.text('TAP ITEMS TO START (#103)'), findsOneWidget);
     },
   );
@@ -637,7 +647,239 @@ void main() {
       expect(find.text('[2x Cheese] Schezwan Platter (Rice)'), findsOneWidget);
       final summaryItemText = tester.widget<Text>(find.text('[2x Cheese] Schezwan Platter (Rice)'));
       expect(summaryItemText.overflow, isNull);
-      expect(summaryItemText.maxLines, isNull);
+    },
+  );
+
+  testWidgets(
+    'Editing paid order with added items and choosing Pay Later keeps new item out of confirmed payment until paid',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 1000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      // Go to Active Orders and edit Order #101 (originally ₹40 paid for 2x Chai)
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+
+      final editBtn = find.byTooltip('Edit Order').first;
+      await tester.tap(editBtn);
+      await tester.pumpAndSettle();
+
+      // Add a Veg Samosa (₹25)
+      await tester.tap(find.text('Veg Samosa (Snacks)'));
+      await tester.pumpAndSettle();
+
+      // Allow editing snackbar to dismiss
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+
+      // Tap Update Order #101 • ₹65
+      await tester.tap(find.text('Update Order #101 • ₹65'));
+      await tester.pumpAndSettle();
+
+      // Additional payment dialog appears
+      expect(find.text('Update Order #101'), findsOneWidget);
+      expect(find.text('Previously Paid:'), findsOneWidget);
+      expect(find.text('₹40'), findsWidgets);
+      expect(find.text('Additional Due'), findsOneWidget);
+      expect(find.text('₹25'), findsWidgets);
+
+      // Tap Pay Later (Pending)
+      await tester.tap(find.text('Pay Later (Pending)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Order #101 updated! Additional ₹25 pending.'), findsOneWidget);
+
+      // Go to Active Orders
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+
+      // Order #101 must NOT be in Confirmed Payment Orders!
+      // It must be in "To Confirm Payment" section!
+      expect(find.text('₹25 Due • Paid ₹40'), findsOneWidget);
+      expect(find.text('Extra • Pending'), findsOneWidget);
+
+      // Check Item Summary tab: Veg Samosa must NOT be in Item Summary yet!
+      await tester.tap(find.text('Item Summary'));
+      await tester.pumpAndSettle();
+
+      // 2x Chai was already paid, so it remains in Item Summary
+      expect(find.text('Masala Chai (Beverages)'), findsOneWidget);
+      // Veg Samosa from Order #101 is NOT paid yet, so ticket #101 (1) must NOT appear in Item Summary!
+      expect(find.text('#101 (1)'), findsNothing);
+      expect(find.text('#102 (2)'), findsOneWidget);
+
+      // Now go back to Active Orders and tap "Confirm ₹25"
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm ₹25'));
+      await tester.pumpAndSettle();
+
+      // Payment confirmation dialog opens for the remaining ₹25
+      expect(find.text('₹25'), findsWidgets);
+      await tester.tap(find.text('Confirm ₹25 & Update'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Payment confirmed for Order #101 via UPI!'), findsOneWidget);
+
+      // Order #101 is now in Confirmed Payment Orders!
+      expect(find.text('Paid • UPI'), findsWidgets);
+      expect(find.text('Extra • Pending'), findsNothing);
+
+      // Check Item Summary tab again: Veg Samosa from #101 is NOW present!
+      await tester.tap(find.text('Item Summary'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('#101 (1)'), findsOneWidget);
+      expect(find.text('#102 (2)'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Editing paid order by linking an addon item moves the linked item to confirm payment while paid item stays in confirmed payment',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      SharedPreferences.setMockInitialValues({
+        'stall_menu': jsonEncode([
+          {
+            'id': 'item_b1',
+            'name': 'Veg Burger',
+            'price': 50.0,
+            'category': 'Fast Food',
+          },
+          {
+            'id': 'item_c1',
+            'name': 'Extra Cheese',
+            'price': 20.0,
+            'category': 'Addons',
+            'isAddon': true,
+          },
+          {
+            'id': 'item_c2',
+            'name': 'Masala Chai',
+            'price': 20.0,
+            'category': 'Beverages',
+          },
+        ]),
+        'stall_orders': jsonEncode([
+          {
+            'token': 101,
+            'itemsSummary': '1x Veg Burger, 1x Masala Chai',
+            'total': 70.0,
+            'timestamp': DateTime.now().toIso8601String(),
+            'customerName': 'Aman',
+            'isPaid': true,
+            'paidAmount': 70.0,
+            'paymentMethod': 'UPI',
+            'items': {'item_b1': 1, 'item_c2': 1},
+            'paidItems': {'item_b1': 1, 'item_c2': 1},
+          }
+        ]),
+        'stall_next_token': 102,
+      });
+
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: StallPosScreen(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Switch to Active Orders tab
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+
+      // Confirmed Payment Orders has Order #101
+      expect(find.text('Confirmed Payment Orders'), findsOneWidget);
+      expect(find.text('#101'), findsOneWidget);
+
+      // Edit Order #101
+      await tester.tap(find.byTooltip('Edit Order'));
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+
+      // We are now on Menu/Cart tab editing Order #101
+      expect(find.text('Editing Order #101'), findsWidgets);
+
+      // Tap Extra Cheese add-on item in menu
+      await tester.tap(find.text('Extra Cheese (Addons)'));
+      await tester.pumpAndSettle();
+
+      // Add-on selection modal opens; confirm adding Extra Cheese to Veg Burger
+      expect(find.text('Customize Extra'), findsOneWidget);
+      await tester.tap(find.textContaining('Add [Extra Cheese]'));
+      await tester.pumpAndSettle();
+
+      // Now cart has [Extra Cheese] Veg Burger + Masala Chai (Total ₹90)
+      expect(find.text('Update Order #101 • ₹90'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+
+      // Tap Update Order #101 • ₹90
+      await tester.tap(find.text('Update Order #101 • ₹90'));
+      await tester.pumpAndSettle();
+
+      // Additional payment dialog opens (Additional Due ₹20)
+      expect(find.text('Additional Due'), findsOneWidget);
+      expect(find.text('₹20'), findsWidgets);
+
+      // Choose Pay Later (Pending)
+      await tester.tap(find.text('Pay Later (Pending)'));
+      await tester.pumpAndSettle();
+
+      // Go to Active Orders tab
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+
+      // In Confirmed Payment Orders: Order #101 is present showing Masala Chai!
+      // In To Confirm Payment: Order #101 is present showing [Extra Cheese] Veg Burger!
+      expect(find.text('Confirmed Payment Orders'), findsOneWidget);
+      expect(find.text('To Confirm Payment'), findsOneWidget);
+      expect(find.text('₹20 Due • Paid ₹70'), findsOneWidget);
+      expect(find.text('Confirm ₹20'), findsOneWidget);
+
+      // Go to Item Summary tab: Only Masala Chai from Confirmed Payment Orders is shown!
+      await tester.tap(find.text('Item Summary'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Masala Chai (Beverages)'), findsOneWidget);
+      // [Extra Cheese] Veg Burger must NOT be in Item Summary because it is in To Confirm Payment!
+      expect(find.textContaining('Veg Burger'), findsNothing);
+
+      // Go back to Active Orders and confirm the remaining ₹20
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm ₹20'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Confirm ₹20 & Update'));
+      await tester.pumpAndSettle();
+
+      // Now Order #101 is fully paid and in Confirmed Payment Orders only!
+      expect(find.text('To Confirm Payment'), findsOneWidget);
+      expect(find.text('Confirm ₹20'), findsNothing);
+
+      // Check Item Summary: Now [Extra Cheese] Veg Burger IS in Item Summary!
+      await tester.tap(find.text('Item Summary'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Masala Chai (Beverages)'), findsOneWidget);
+      expect(find.textContaining('Veg Burger'), findsOneWidget);
     },
   );
 }

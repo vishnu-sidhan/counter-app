@@ -1633,6 +1633,107 @@ class _StallPosScreenState extends State<StallPosScreen>
 
     HapticFeedback.heavyImpact();
 
+    if (isEdit) {
+      final editToken = _controller.editingOrderId!;
+      final existingOrder = _controller.orders.firstWhere(
+        (o) => o.token == editToken,
+      );
+      final wasPaid = existingOrder.isPaid || existingOrder.paidAmount > 0;
+      final prevPaid = existingOrder.paidAmount > 0
+          ? existingOrder.paidAmount
+          : (existingOrder.isPaid ? existingOrder.total : 0.0);
+      final currentCartTotal = _controller.cartTotal;
+      final additionalDue = currentCartTotal - prevPaid;
+
+      if (wasPaid && additionalDue > 0) {
+        // Prompt cashier to collect additional payment for the added items!
+        final result = await PaymentConfirmationDialog.show(
+          context,
+          orderNumber: editToken,
+          isEditing: true,
+          totalDue: additionalDue,
+          customerName: custName.isNotEmpty
+              ? custName
+              : existingOrder.displayCustomerName,
+          previousPaid: prevPaid,
+          newTotal: currentCartTotal,
+        );
+
+        if (result == null) {
+          // Cashier tapped "Back to Cart" - abort update and keep cart open
+          return;
+        }
+
+        if (result.isMarkAsPending) {
+          // Pay later / keep pending: order is updated, but additional due is unpaid!
+          await _controller.punchOrUpdateOrder(
+            customerName: custName.isNotEmpty ? custName : null,
+            isPaid: false,
+            paidAmount: prevPaid,
+            paidItems: existingOrder.paidItems.isNotEmpty
+                ? existingOrder.paidItems
+                : existingOrder.items,
+          );
+          _customerNameController.clear();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Order #$editToken updated! Additional ₹${additionalDue.toStringAsFixed(0)} pending.',
+                ),
+                duration: const Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        } else {
+          // Additional payment confirmed via selected payment method
+          await _controller.punchOrUpdateOrder(
+            customerName: custName.isNotEmpty ? custName : null,
+            isPaid: true,
+            paidAmount: currentCartTotal,
+            paidItems: Map.from(_controller.cart),
+            paymentMethod: result.paymentMethod,
+          );
+          _customerNameController.clear();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Order #$editToken updated! Additional ₹${additionalDue.toStringAsFixed(0)} paid via ${result.paymentMethod}!',
+                ),
+                duration: const Duration(seconds: 2),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+          return;
+        }
+      } else if (wasPaid && additionalDue < 0) {
+        // Items were removed: refund difference to customer
+        await _controller.punchOrUpdateOrder(
+          customerName: custName.isNotEmpty ? custName : null,
+          isPaid: true,
+          paidAmount: currentCartTotal,
+          paidItems: Map.from(_controller.cart),
+        );
+        _customerNameController.clear();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Order #$editToken updated! Refund ₹${(-additionalDue).toStringAsFixed(0)} to customer.',
+              ),
+              duration: const Duration(seconds: 3),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        }
+        return;
+      }
+    }
+
     final outcome = await _controller.punchOrUpdateOrder(
       customerName: custName.isNotEmpty ? custName : null,
       isPaid: isEdit ? null : false,
@@ -1656,15 +1757,18 @@ class _StallPosScreenState extends State<StallPosScreen>
   }
 
   Future<void> _showConfirmPaymentDialog(StallOrder order) async {
+    final due = order.hasPartialPayment ? order.remainingDue : order.total;
     final result = await PaymentConfirmationDialog.show(
       context,
       orderNumber: order.token,
       isEditing: false,
-      totalDue: order.total,
+      totalDue: due,
       customerName: order.displayCustomerName,
+      previousPaid: order.hasPartialPayment ? order.paidAmount : null,
+      newTotal: order.total,
     );
 
-    if (result == null) return;
+    if (result == null || result.isMarkAsPending) return;
 
     await _controller.confirmPayment(
       token: order.token,
@@ -3093,7 +3197,13 @@ class _StallPosScreenState extends State<StallPosScreen>
       cardBorderColor = Colors.orange.shade800;
     }
 
-    final itemsWithCategory = _controller.getOrderItemsWithCategory(order);
+    final targetItems = isConfirmedPayment
+        ? _controller.getConfirmedOrderItems(order)
+        : _controller.getPendingOrderItems(order);
+    final itemsWithCategory = _controller.getOrderItemsWithCategory(
+      order,
+      customItems: targetItems.isNotEmpty ? targetItems : null,
+    );
 
     return Card(
       elevation: 2,
@@ -3176,7 +3286,9 @@ class _StallPosScreenState extends State<StallPosScreen>
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            'Paid • ${order.paymentMethod ?? 'UPI'}',
+                            order.hasPartialPayment
+                                ? 'Paid ₹${order.paidAmount.toStringAsFixed(0)} • ${order.paymentMethod ?? 'UPI'}'
+                                : 'Paid • ${order.paymentMethod ?? 'UPI'}',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
@@ -3195,7 +3307,9 @@ class _StallPosScreenState extends State<StallPosScreen>
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            'Payment Pending',
+                            order.hasPartialPayment
+                                ? '₹${order.remainingDue.toStringAsFixed(0)} Due • Paid ₹${order.paidAmount.toStringAsFixed(0)}'
+                                : 'Payment Pending',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
@@ -3209,7 +3323,11 @@ class _StallPosScreenState extends State<StallPosScreen>
 
                 // Total amount
                 Text(
-                  '₹${order.total.toStringAsFixed(0)}',
+                  isConfirmedPayment && order.hasPartialPayment
+                      ? '₹${order.paidAmount.toStringAsFixed(0)}'
+                      : !isConfirmedPayment && order.hasPartialPayment
+                          ? '₹${order.remainingDue.toStringAsFixed(0)}'
+                          : '₹${order.total.toStringAsFixed(0)}',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w900,
@@ -3264,12 +3382,41 @@ class _StallPosScreenState extends State<StallPosScreen>
 
                           // Item Name & Category in brackets
                           Expanded(
-                            child: Text(
-                              item.displayName,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 14,
-                              ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    item.displayName,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                                if (!isConfirmedPayment &&
+                                    order.hasPartialPayment &&
+                                    !item.isPaidItem) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 5,
+                                      vertical: 1,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange.shade100,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      'Extra • Pending',
+                                      style: TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.bold,
+                                        color: Colors.orange.shade900,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                         ],
@@ -3312,9 +3459,11 @@ class _StallPosScreenState extends State<StallPosScreen>
                         key: ValueKey('confirm_payment_btn_${order.token}'),
                         onPressed: () => _showConfirmPaymentDialog(order),
                         icon: const Icon(Icons.payments_rounded, size: 14),
-                        label: const Text(
-                          'Confirm Payment',
-                          style: TextStyle(
+                        label: Text(
+                          order.hasPartialPayment
+                              ? 'Confirm ₹${order.remainingDue.toStringAsFixed(0)}'
+                              : 'Confirm Payment',
+                          style: const TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.bold,
                           ),

@@ -33,17 +33,70 @@ class OrderController extends ChangeNotifier {
   String get selectedCategory => _selectedCategory;
   StallStorageService get storageService => _storageService;
 
+  /// Returns only the items/quantities that have been paid for in the given order.
+  /// If an item contains add-ons (composite key with '+'), it is only considered confirmed
+  /// if the exact linked item was paid for. If an add-on was added to an item, the linked
+  /// item moves to pending and is excluded from confirmed items.
+  Map<String, int> getConfirmedOrderItems(StallOrder order) {
+    if (order.isPaid) {
+      return Map.unmodifiable(order.items);
+    }
+    if (order.paidItems.isEmpty || order.paidAmount <= 0) {
+      return const {};
+    }
+
+    final confirmed = <String, int>{};
+    for (final entry in order.items.entries) {
+      final itemId = entry.key;
+      final totalQty = entry.value;
+      if (totalQty <= 0) continue;
+
+      final paidQty = order.paidItems[itemId] ?? 0;
+      if (paidQty > 0) {
+        final qty = paidQty > totalQty ? totalQty : paidQty;
+        confirmed[itemId] = qty;
+      }
+    }
+    return Map.unmodifiable(confirmed);
+  }
+
+  /// Returns only the items/quantities that have NOT yet been paid for in the given order.
+  /// If an item contains add-ons that were added without being fully paid,
+  /// the entire linked item moves to pending.
+  Map<String, int> getPendingOrderItems(StallOrder order) {
+    if (order.isPaid) {
+      return const {};
+    }
+    if (order.paidItems.isEmpty || order.paidAmount <= 0) {
+      return Map.unmodifiable(order.items);
+    }
+
+    final pending = <String, int>{};
+    for (final entry in order.items.entries) {
+      final itemId = entry.key;
+      final totalQty = entry.value;
+      if (totalQty <= 0) continue;
+
+      final paidQty = order.paidItems[itemId] ?? 0;
+      final unpaidQty = totalQty - paidQty;
+      if (unpaidQty > 0) {
+        pending[itemId] = unpaidQty;
+      }
+    }
+    return Map.unmodifiable(pending);
+  }
+
   /// Returns all active (non-completed) orders in FIFO order.
   List<StallOrder> get activeOrders =>
       _orders.where((o) => !o.isCompleted).toList();
 
-  /// Returns active orders where payment is confirmed.
+  /// Returns active orders that have confirmed (paid) items.
   List<StallOrder> get confirmedActiveOrders =>
-      activeOrders.where((o) => o.isPaid).toList();
+      activeOrders.where((o) => o.isPaid || getConfirmedOrderItems(o).isNotEmpty).toList();
 
-  /// Returns active orders where payment is still pending confirmation.
+  /// Returns active orders that have pending (unpaid) items to confirm payment.
   List<StallOrder> get toConfirmPaymentOrders =>
-      activeOrders.where((o) => !o.isPaid).toList();
+      activeOrders.where((o) => !o.isPaid && getPendingOrderItems(o).isNotEmpty).toList();
 
   /// Total count of items in the current active cart.
   int get cartItemCount => _cart.values.fold(0, (a, b) => a + b);
@@ -195,16 +248,21 @@ class OrderController extends ChangeNotifier {
   /// Aggregates total quantities per item and tracks ticket tags.
   /// Custom composite items with add-ons remain separate entries.
   List<AggregatedOrderItem> get combinedActiveOrders {
-    final confirmed = confirmedActiveOrders;
-    if (confirmed.isEmpty) return const [];
+    // Filter to active orders that have confirmed items
+    final eligibleOrders = _orders
+        .where((o) => !o.isCompleted && (o.isPaid || getConfirmedOrderItems(o).isNotEmpty))
+        .toList();
+    if (eligibleOrders.isEmpty) return const [];
 
     // Map: ItemKey -> Aggregated details
     final Map<String, _ItemAccumulator> accumulators = {};
 
-    for (final order in confirmed) {
-      if (order.items.isNotEmpty) {
+    for (final order in eligibleOrders) {
+      // Use getConfirmedOrderItems so only items with confirmed payment are aggregated
+      final itemsToAggregate = getConfirmedOrderItems(order);
+      if (itemsToAggregate.isNotEmpty) {
         // Structured items map available
-        order.items.forEach((itemId, qty) {
+        itemsToAggregate.forEach((itemId, qty) {
           if (qty <= 0) return;
           final item = findItem(itemId);
 
@@ -220,7 +278,7 @@ class OrderController extends ChangeNotifier {
           acc.totalQty += qty;
           acc.tickets.add(OrderTicketQuantity(token: order.token, quantity: qty));
         });
-      } else if (order.itemsSummary.isNotEmpty) {
+      } else if (order.isPaid && order.itemsSummary.isNotEmpty) {
         // Fallback parser for legacy or raw summaries: e.g. "3x Masala Chai, 2x Veg Samosa"
         final parts = order.itemsSummary.split(',');
         final regex = RegExp(r'^\s*(\d+)x\s+(.+)$');
@@ -272,21 +330,25 @@ class OrderController extends ChangeNotifier {
   }
 
   /// Extracts individual items with their corresponding category and color for an order.
-  List<({String name, int quantity, String category, int? colorHex, String displayName})>
-      getOrderItemsWithCategory(StallOrder order) {
+  /// If [customItems] is provided, extracts details for that subset of items instead of [order.items].
+  List<({String name, int quantity, String category, int? colorHex, String displayName, bool isPaidItem})>
+      getOrderItemsWithCategory(StallOrder order, {Map<String, int>? customItems}) {
     final result =
-        <({String name, int quantity, String category, int? colorHex, String displayName})>[];
+        <({String name, int quantity, String category, int? colorHex, String displayName, bool isPaidItem})>[];
 
-    if (order.items.isNotEmpty) {
-      order.items.forEach((itemId, qty) {
+    final targetItems = customItems ?? order.items;
+    if (targetItems.isNotEmpty) {
+      targetItems.forEach((itemId, qty) {
         if (qty <= 0) return;
         final item = findItem(itemId);
+        final isPaidItem = order.isPaid || ((order.paidItems[itemId] ?? 0) >= qty);
         result.add((
           name: item.name,
           quantity: qty,
           category: item.category,
           colorHex: item.colorHex,
           displayName: item.displayName,
+          isPaidItem: isPaidItem,
         ));
       });
     } else if (order.itemsSummary.isNotEmpty) {
@@ -312,6 +374,7 @@ class OrderController extends ChangeNotifier {
             category: item.category,
             colorHex: item.colorHex,
             displayName: item.displayName,
+            isPaidItem: order.isPaid,
           ));
         }
       }
@@ -572,6 +635,8 @@ class OrderController extends ChangeNotifier {
     required String? customerName,
     String? paymentMethod,
     bool? isPaid,
+    double? paidAmount,
+    Map<String, int>? paidItems,
   }) async {
     if (_cart.isEmpty) {
       throw StateError('Cannot punch an empty order');
@@ -596,7 +661,52 @@ class OrderController extends ChangeNotifier {
 
       if (idx != -1) {
         final existing = _orders[idx];
-        final updatedIsPaid = isPaid ?? existing.isPaid;
+        final wasPaid = existing.isPaid || existing.paidAmount > 0;
+        final prevPaid = existing.paidAmount > 0
+            ? existing.paidAmount
+            : (existing.isPaid ? existing.total : 0.0);
+        final additionalDue = (total - prevPaid) > 0 ? (total - prevPaid) : 0.0;
+
+        double finalPaidAmount;
+        bool finalIsPaid;
+        Map<String, int> finalPaidItems;
+
+        if (paidAmount != null) {
+          finalPaidAmount = paidAmount;
+          finalIsPaid = isPaid ?? (finalPaidAmount >= total);
+          finalPaidItems = paidItems ??
+              (finalIsPaid
+                  ? Map.from(_cart)
+                  : Map.from(existing.paidItems.isNotEmpty ? existing.paidItems : existing.items));
+        } else if (isPaid != null) {
+          finalIsPaid = isPaid;
+          finalPaidAmount = isPaid ? total : prevPaid;
+          finalPaidItems = isPaid
+              ? Map.from(_cart)
+              : Map.from(existing.paidItems.isNotEmpty ? existing.paidItems : existing.items);
+        } else {
+          if (wasPaid) {
+            if (additionalDue > 0) {
+              // Additional payment is required: preserve previous paid amount and items,
+              // but mark order as NOT fully paid so newly added items are NOT shown in confirmed payment!
+              finalPaidAmount = prevPaid;
+              finalPaidItems = existing.paidItems.isNotEmpty
+                  ? Map.from(existing.paidItems)
+                  : (existing.items.isNotEmpty ? Map.from(existing.items) : {});
+              finalIsPaid = false;
+            } else {
+              // Total decreased or stayed identical
+              finalPaidAmount = total;
+              finalPaidItems = Map.from(_cart);
+              finalIsPaid = true;
+            }
+          } else {
+            finalPaidAmount = 0.0;
+            finalPaidItems = const {};
+            finalIsPaid = false;
+          }
+        }
+
         final updatedPaymentMethod = paymentMethod ?? existing.paymentMethod;
         _orders[idx] = existing.copyWith(
           itemsSummary: summary,
@@ -604,7 +714,9 @@ class OrderController extends ChangeNotifier {
           items: Map.from(_cart),
           customerName: cleanCustomerName,
           clearCustomerName: cleanCustomerName == null,
-          isPaid: updatedIsPaid,
+          isPaid: finalIsPaid,
+          paidAmount: finalPaidAmount,
+          paidItems: finalPaidItems,
           paymentMethod: updatedPaymentMethod,
         );
       }
@@ -624,6 +736,8 @@ class OrderController extends ChangeNotifier {
         timestamp: DateTime.now(),
         customerName: cleanCustomerName,
         isPaid: effectiveIsPaid,
+        paidAmount: effectiveIsPaid ? (paidAmount ?? total) : (paidAmount ?? 0.0),
+        paidItems: effectiveIsPaid ? (paidItems ?? Map.from(_cart)) : (paidItems ?? const {}),
         paymentMethod: paymentMethod,
         items: Map.from(_cart),
       );
@@ -645,8 +759,11 @@ class OrderController extends ChangeNotifier {
   }) async {
     final idx = _orders.indexWhere((o) => o.token == token);
     if (idx != -1) {
-      _orders[idx] = _orders[idx].copyWith(
+      final existing = _orders[idx];
+      _orders[idx] = existing.copyWith(
         isPaid: true,
+        paidAmount: existing.total,
+        paidItems: Map.from(existing.items),
         paymentMethod: paymentMethod,
       );
       await _saveState();

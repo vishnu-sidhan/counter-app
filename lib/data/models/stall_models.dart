@@ -128,6 +128,8 @@ class StallOrder {
   final bool isPaid;
   final String? paymentMethod;
   final Map<String, int> items;
+  final double paidAmount;
+  final Map<String, int> paidItems;
 
   StallOrder({
     required this.token,
@@ -140,6 +142,8 @@ class StallOrder {
     this.isPaid = false,
     this.paymentMethod,
     this.items = const {},
+    this.paidAmount = 0.0,
+    this.paidItems = const {},
   });
 
   String get displayCustomerName {
@@ -148,6 +152,15 @@ class StallOrder {
     }
     return 'Walk-in Customer';
   }
+
+  /// Balance amount remaining to be paid
+  double get remainingDue => (total - paidAmount) > 0 ? (total - paidAmount) : 0.0;
+
+  /// Whether this order has had a previous payment but still has an unpaid balance
+  bool get hasPartialPayment => paidAmount > 0 && remainingDue > 0;
+
+  /// Whether this order is completely paid
+  bool get isFullyPaid => isPaid && remainingDue == 0;
 
   StallOrder copyWith({
     int? token,
@@ -161,6 +174,8 @@ class StallOrder {
     bool? isPaid,
     String? paymentMethod,
     Map<String, int>? items,
+    double? paidAmount,
+    Map<String, int>? paidItems,
   }) {
     return StallOrder(
       token: token ?? this.token,
@@ -173,6 +188,8 @@ class StallOrder {
       isPaid: isPaid ?? this.isPaid,
       paymentMethod: paymentMethod ?? this.paymentMethod,
       items: items ?? this.items,
+      paidAmount: paidAmount ?? this.paidAmount,
+      paidItems: paidItems ?? this.paidItems,
     );
   }
 
@@ -187,6 +204,8 @@ class StallOrder {
         'isPaid': isPaid,
         if (paymentMethod != null) 'paymentMethod': paymentMethod,
         'items': items,
+        'paidAmount': paidAmount,
+        'paidItems': paidItems,
       };
 
   factory StallOrder.fromJson(Map<String, dynamic> map) {
@@ -199,19 +218,36 @@ class StallOrder {
       });
     }
 
+    final isPaidVal = map['isPaid'] == true;
+    final totalVal = (map['total'] as num?)?.toDouble() ?? 0.0;
+    final paidAmountVal = (map['paidAmount'] as num?)?.toDouble() ?? (isPaidVal ? totalVal : 0.0);
+
+    Map<String, int> parsedPaidItems = {};
+    if (map['paidItems'] is Map) {
+      (map['paidItems'] as Map).forEach((k, v) {
+        if (v is num) {
+          parsedPaidItems[k.toString()] = v.toInt();
+        }
+      });
+    } else if (isPaidVal) {
+      parsedPaidItems = Map.from(parsedItems);
+    }
+
     return StallOrder(
       token: (map['token'] as num?)?.toInt() ?? 0,
       itemsSummary: map['itemsSummary']?.toString() ?? '',
-      total: (map['total'] as num?)?.toDouble() ?? 0.0,
+      total: totalVal,
       timestamp: DateTime.tryParse(map['timestamp']?.toString() ?? '') ?? DateTime.now(),
       isCompleted: map['isCompleted'] == true,
       completedAt: map['completedAt'] != null
           ? DateTime.tryParse(map['completedAt'].toString())
           : null,
       customerName: map['customerName']?.toString(),
-      isPaid: map['isPaid'] == true,
+      isPaid: isPaidVal,
       paymentMethod: map['paymentMethod']?.toString(),
       items: parsedItems,
+      paidAmount: paidAmountVal,
+      paidItems: parsedPaidItems,
     );
   }
 }

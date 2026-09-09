@@ -693,4 +693,152 @@ void main() {
       expect(grouped.containsKey('Noodles'), isFalse);
     });
   });
+
+  group('OrderController - Additional Payment on Order Update', () {
+    test('editing a paid order with new items marks it pending if additional payment not confirmed', () async {
+      final chai = controller.menu.firstWhere((m) => m.id == 'item_1'); // ₹20
+      final samosa = controller.menu.firstWhere((m) => m.id == 'item_2'); // ₹25
+
+      // 1. Create and pay for order #101 (2x Chai = ₹40)
+      controller.addToCart(chai);
+      controller.addToCart(chai);
+      await controller.punchOrUpdateOrder(
+        customerName: 'Aman',
+        paymentMethod: 'UPI',
+        isPaid: true,
+      );
+
+      var order = controller.orders.first;
+      expect(order.token, 101);
+      expect(order.total, 40.0);
+      expect(order.paidAmount, 40.0);
+      expect(order.isPaid, isTrue);
+      expect(order.remainingDue, 0.0);
+      expect(order.hasPartialPayment, isFalse);
+
+      // Verify in combinedActiveOrders
+      expect(controller.combinedActiveOrders.first.itemName, 'Masala Chai');
+      expect(controller.combinedActiveOrders.first.totalQuantity, 2);
+
+      // 2. Edit order #101: add a Samosa (+₹25 -> ₹65)
+      controller.startEditingOrder(order);
+      controller.addToCart(samosa);
+      expect(controller.cartTotal, 65.0);
+
+      // Update without immediate payment (Pay Later flow)
+      await controller.punchOrUpdateOrder(
+        customerName: 'Aman',
+        isPaid: false,
+        paidAmount: 40.0,
+      );
+
+      order = controller.orders.first;
+      expect(order.total, 65.0);
+      expect(order.paidAmount, 40.0);
+      expect(order.remainingDue, 25.0);
+      expect(order.hasPartialPayment, isTrue);
+      expect(order.isPaid, isFalse);
+
+      // Order #101 has paid items (Chai), so it appears in confirmedActiveOrders (showing Chai)
+      expect(controller.confirmedActiveOrders.length, 1);
+      expect(controller.getConfirmedOrderItems(order), {'item_1': 2});
+
+      // Order #101 also has pending items (Samosa), so it appears in toConfirmPaymentOrders (showing Samosa)
+      expect(controller.toConfirmPaymentOrders.length, 1);
+      expect(controller.getPendingOrderItems(order), {'item_2': 1});
+
+      // In combinedActiveOrders, Samosa must NOT be present (only confirmed items)!
+      final activeCombined = controller.combinedActiveOrders;
+      expect(activeCombined.any((a) => a.itemName == 'Veg Samosa'), isFalse);
+      expect(activeCombined.firstWhere((a) => a.itemName == 'Masala Chai').totalQuantity, 2);
+
+      // 3. Confirm the remaining payment
+      await controller.confirmPayment(token: 101, paymentMethod: 'UPI');
+
+      order = controller.orders.first;
+      expect(order.paidAmount, 65.0);
+      expect(order.remainingDue, 0.0);
+      expect(order.hasPartialPayment, isFalse);
+      expect(order.isPaid, isTrue);
+
+      // Now both Chai and Samosa are confirmed!
+      expect(controller.confirmedActiveOrders.length, 1);
+      expect(controller.toConfirmPaymentOrders, isEmpty);
+      expect(controller.getConfirmedOrderItems(order), {'item_1': 2, 'item_2': 1});
+      expect(controller.getPendingOrderItems(order), isEmpty);
+
+      final finalCombined = controller.combinedActiveOrders;
+      expect(finalCombined.firstWhere((a) => a.itemName == 'Masala Chai').totalQuantity, 2);
+      expect(finalCombined.firstWhere((a) => a.itemName == 'Veg Samosa').totalQuantity, 1);
+    });
+
+    test('adding an addon item moves the linked item to confirm payment and excludes it from item summary until paid', () async {
+      final burger = const MenuItem(id: 'item_burger', name: 'Veg Burger', price: 50);
+      final cheese = const MenuItem(id: 'item_cheese', name: 'Extra Cheese', price: 20, isAddon: true);
+      final chai = const MenuItem(id: 'item_chai', name: 'Masala Chai', price: 20);
+      await controller.setMenu([burger, cheese, chai]);
+
+      // 1. Place order with 1x Burger and 1x Chai, fully paid (₹70)
+      controller.addToCart(burger);
+      controller.addToCart(chai);
+      await controller.punchOrUpdateOrder(customerName: 'Rohit', isPaid: true, paidAmount: 70.0);
+
+      var order = controller.orders.first;
+      expect(order.isPaid, isTrue);
+      expect(controller.confirmedActiveOrders.length, 1);
+      expect(controller.toConfirmPaymentOrders, isEmpty);
+      expect(controller.combinedActiveOrders.length, 2);
+
+      // 2. Edit order: link cheese add-on to the burger (Burger becomes [Extra Cheese] Veg Burger, new total ₹90)
+      controller.startEditingOrder(order);
+      controller.addAddonToCart(targetCartItemId: 'item_burger', addon: cheese);
+      expect(controller.cartTotal, 90.0);
+
+      // Update order as Pay Later (₹70 previously paid, ₹20 additional due)
+      await controller.punchOrUpdateOrder(
+        customerName: 'Rohit',
+        isPaid: false,
+        paidAmount: 70.0,
+      );
+
+      order = controller.orders.first;
+      expect(order.isPaid, isFalse);
+      expect(order.remainingDue, 20.0);
+
+      // Confirmed items: only Masala Chai (Burger has unpaid add-on, so it moved to pending!)
+      final confirmedItems = controller.getConfirmedOrderItems(order);
+      expect(confirmedItems.containsKey('item_chai'), isTrue);
+      expect(confirmedItems['item_chai'], 1);
+      expect(confirmedItems.containsKey('item_burger+item_cheese'), isFalse);
+
+      // Pending items: the ENTIRE linked item [Extra Cheese] Veg Burger
+      final pendingItems = controller.getPendingOrderItems(order);
+      expect(pendingItems.containsKey('item_burger+item_cheese'), isTrue);
+      expect(pendingItems['item_burger+item_cheese'], 1);
+      expect(pendingItems.containsKey('item_chai'), isFalse);
+
+      // Both queues show this order with their respective sliced items
+      expect(controller.confirmedActiveOrders.length, 1);
+      expect(controller.toConfirmPaymentOrders.length, 1);
+
+      // Item summary must ONLY show confirmed items (Masala Chai, NOT the linked burger with unpaid cheese)
+      final activeSummary = controller.combinedActiveOrders;
+      expect(activeSummary.length, 1);
+      expect(activeSummary.first.itemName, 'Masala Chai');
+      expect(activeSummary.any((a) => a.itemName.contains('Burger')), isFalse);
+
+      // 3. Confirm payment for the extra ₹20
+      await controller.confirmPayment(token: order.token, paymentMethod: 'Cash');
+      order = controller.orders.first;
+      expect(order.isPaid, isTrue);
+
+      // Now both items are confirmed and appear in Item Summary
+      expect(controller.toConfirmPaymentOrders, isEmpty);
+      expect(controller.confirmedActiveOrders.length, 1);
+      final finalSummary = controller.combinedActiveOrders;
+      expect(finalSummary.length, 2);
+      expect(finalSummary.any((a) => a.itemName.contains('Cheese') && a.itemName.contains('Burger')), isTrue);
+      expect(finalSummary.any((a) => a.itemName == 'Masala Chai'), isTrue);
+    });
+  });
 }

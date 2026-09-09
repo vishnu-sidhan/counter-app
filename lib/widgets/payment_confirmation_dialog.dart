@@ -5,11 +5,13 @@ class PaymentResult {
   final String paymentMethod;
   final double? amountReceived;
   final double? changeToReturn;
+  final bool isMarkAsPending;
 
   const PaymentResult({
     required this.paymentMethod,
     this.amountReceived,
     this.changeToReturn,
+    this.isMarkAsPending = false,
   });
 }
 
@@ -19,6 +21,8 @@ class PaymentConfirmationDialog extends StatefulWidget {
   final bool isEditing;
   final double totalDue;
   final String customerName;
+  final double? previousPaid;
+  final double? newTotal;
 
   const PaymentConfirmationDialog({
     super.key,
@@ -26,6 +30,8 @@ class PaymentConfirmationDialog extends StatefulWidget {
     this.isEditing = false,
     required this.totalDue,
     required this.customerName,
+    this.previousPaid,
+    this.newTotal,
   });
 
   /// Static helper to display the dialog
@@ -35,6 +41,8 @@ class PaymentConfirmationDialog extends StatefulWidget {
     bool isEditing = false,
     required double totalDue,
     required String customerName,
+    double? previousPaid,
+    double? newTotal,
   }) {
     return showDialog<PaymentResult>(
       context: context,
@@ -44,6 +52,8 @@ class PaymentConfirmationDialog extends StatefulWidget {
         isEditing: isEditing,
         totalDue: totalDue,
         customerName: customerName,
+        previousPaid: previousPaid,
+        newTotal: newTotal,
       ),
     );
   }
@@ -147,34 +157,82 @@ class _PaymentConfirmationDialogState extends State<PaymentConfirmationDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Total Due Banner
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: theme.colorScheme.primary.withAlpha(20),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: theme.colorScheme.primary.withAlpha(60),
+            if (widget.previousPaid != null && widget.previousPaid! > 0) ...[
+              // Additional Payment Breakdown Banner
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withAlpha(25),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.amber.withAlpha(90)),
+                ),
+                child: Column(
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Previously Paid:', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                        Text('₹${widget.previousPaid!.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    if (widget.newTotal != null) ...[
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Updated Order Total:', style: TextStyle(fontSize: 13, color: Colors.grey)),
+                          Text('₹${widget.newTotal!.toStringAsFixed(0)}', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ],
+                    const Divider(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Additional Due', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                        Text(
+                          '₹${widget.totalDue.toStringAsFixed(0)}',
+                          style: TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w900,
+                            color: theme.colorScheme.primary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Total Due',
-                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+            ] else ...[
+              // Total Due Banner
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.primary.withAlpha(20),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: theme.colorScheme.primary.withAlpha(60),
                   ),
-                  Text(
-                    '₹${widget.totalDue.toStringAsFixed(0)}',
-                    style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      color: theme.colorScheme.primary,
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text(
+                      'Total Due',
+                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
                     ),
-                  ),
-                ],
+                    Text(
+                      '₹${widget.totalDue.toStringAsFixed(0)}',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        color: theme.colorScheme.primary,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
+            ],
             const SizedBox(height: 12),
 
             // Customer Name Badge
@@ -392,13 +450,30 @@ class _PaymentConfirmationDialogState extends State<PaymentConfirmationDialog> {
           onPressed: () => Navigator.of(context).pop(null),
           child: const Text('Back to Cart'),
         ),
+        if (widget.previousPaid != null && widget.previousPaid! > 0)
+          TextButton(
+            onPressed: () {
+              Navigator.of(context).pop(
+                const PaymentResult(
+                  paymentMethod: 'Pending',
+                  isMarkAsPending: true,
+                ),
+              );
+            },
+            child: const Text(
+              'Pay Later (Pending)',
+              style: TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+            ),
+          ),
         FilledButton.icon(
           onPressed: _onConfirm,
           icon: const Icon(Icons.check_circle_outline, size: 18),
           label: Text(
-            widget.isEditing
-                ? 'Confirm & Update'
-                : 'Confirm Payment & Complete',
+            widget.previousPaid != null && widget.previousPaid! > 0
+                ? 'Confirm ₹${widget.totalDue.toStringAsFixed(0)} & Update'
+                : (widget.isEditing
+                    ? 'Confirm & Update'
+                    : 'Confirm Payment & Complete'),
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
         ),
