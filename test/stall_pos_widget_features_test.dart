@@ -72,7 +72,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Add Masala Chai to cart
-      await tester.tap(find.text('Masala Chai'));
+      await tester.tap(find.text('Masala Chai (Beverages)'));
       await tester.pumpAndSettle();
 
       expect(find.text('1'), findsWidgets); // In-cart quantity badge
@@ -115,7 +115,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Add Veg Samosa (₹25)
-      await tester.tap(find.text('Veg Samosa'));
+      await tester.tap(find.text('Veg Samosa (Snacks)'));
       await tester.pumpAndSettle();
 
       // Enter optional customer name in cart
@@ -137,11 +137,11 @@ void main() {
       await tester.tap(find.text('Active Orders'));
       await tester.pumpAndSettle();
 
-      // Order #103 appears in "To Confirm Payment" section with category tag
+      // Order #103 appears in "To Confirm Payment" section with category tag in brackets
       expect(find.text('To Confirm Payment'), findsOneWidget);
       expect(find.text('#103'), findsOneWidget);
       expect(find.text('Payment Pending'), findsOneWidget);
-      expect(find.text('Snacks'), findsWidgets); // Category pill for Samosa
+      expect(find.textContaining('Snacks'), findsWidgets);
 
       // Tap "Confirm Payment" button on Order #103
       await tester.tap(find.byKey(const ValueKey('confirm_payment_btn_103')));
@@ -163,6 +163,13 @@ void main() {
       expect(find.text('Cash'), findsOneWidget);
       expect(find.text('UPI / QR'), findsOneWidget);
       expect(find.text('Card'), findsNothing);
+
+      // Verify that UPI / QR is selected by default
+      expect(find.textContaining('Scan UPI QR on stall terminal'), findsOneWidget);
+
+      // Select Cash to test cash calculation
+      await tester.tap(find.text('Cash'));
+      await tester.pumpAndSettle();
 
       // Verify change calculation: by default exact (25), change 0
       expect(find.text('Change to Return:'), findsOneWidget);
@@ -211,15 +218,15 @@ void main() {
       await tester.tap(find.text('Active Orders'));
       await tester.pumpAndSettle();
 
-      // Verify Order #101 shows customer name 'Vikram' and category tag 'Beverages'
+      // Verify Order #101 shows customer name 'Vikram' and category in brackets
       expect(find.text('#101'), findsOneWidget);
       expect(find.text('Vikram'), findsOneWidget);
-      expect(find.text('Beverages'), findsWidgets);
+      expect(find.textContaining('Beverages'), findsWidgets);
 
-      // Verify Order #102 shows fallback 'Walk-in Customer' and categories
+      // Verify Order #102 shows fallback 'Walk-in Customer' and category in brackets
       expect(find.text('#102'), findsOneWidget);
       expect(find.text('Walk-in Customer'), findsOneWidget);
-      expect(find.text('Snacks'), findsWidgets);
+      expect(find.textContaining('Snacks'), findsWidgets);
 
       // Test Delete Order #102
       final deleteButtons = find.byTooltip('Delete Order');
@@ -259,7 +266,7 @@ void main() {
       expect(find.text('Update Order #101 • ₹40'), findsOneWidget);
 
       // Add a Samosa while editing
-      await tester.tap(find.text('Veg Samosa'));
+      await tester.tap(find.text('Veg Samosa (Snacks)'));
       await tester.pumpAndSettle();
       expect(find.text('Update Order #101 • ₹65'), findsOneWidget);
 
@@ -346,7 +353,7 @@ void main() {
       await tester.pumpAndSettle();
 
       // Tap on Masala Chai to add to cart
-      await tester.tap(find.text('Masala Chai'));
+      await tester.tap(find.text('Masala Chai (Beverages)'));
       await tester.pumpAndSettle();
 
       // Verify cart preview bar is visible
@@ -386,6 +393,251 @@ void main() {
       // Verify sheet closed and order placed
       expect(find.text('Cart (2 items)'), findsNothing);
       expect(find.text('TAP ITEMS TO START (#104)'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Tapping an item with slash opens variant selection sheet and adds chosen variant',
+    (WidgetTester tester) async {
+      SharedPreferences.setMockInitialValues({
+        'stall_menu': jsonEncode([
+          {
+            'id': 'item_combo',
+            'name': 'Tea / Coffee',
+            'price': 25.0,
+            'category': 'Beverages',
+          },
+        ]),
+        'stall_orders': jsonEncode([]),
+        'stall_next_token': 101,
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Tea / Coffee (Beverages)'), findsOneWidget);
+      expect(find.text('Options'), findsOneWidget);
+
+      // Tap the card
+      await tester.tap(find.text('Tea / Coffee (Beverages)'));
+      await tester.pumpAndSettle();
+
+      // BottomSheet should open with options
+      expect(find.text('Select Option'), findsOneWidget);
+      expect(find.text('Tea'), findsOneWidget);
+      expect(find.text('Coffee'), findsOneWidget);
+
+      // Tap 'Coffee'
+      await tester.tap(find.text('Coffee'));
+      await tester.pumpAndSettle();
+
+      // BottomSheet closed and cart has Coffee
+      expect(find.text('Select Option'), findsNothing);
+      expect(find.text('PUNCH ORDER (#101) • ₹25'), findsOneWidget);
+      expect(find.textContaining('Coffee'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'Add-ons cannot be added alone, must be linked to a main item',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 1200);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      SharedPreferences.setMockInitialValues({
+        'stall_menu': jsonEncode([
+          {
+            'id': 'item_burger',
+            'name': 'Veg Burger',
+            'price': 80.0,
+            'category': 'Fast Food',
+          },
+          {
+            'id': 'item_cheese',
+            'name': 'Extra Cheese',
+            'price': 20.0,
+            'category': 'Addons',
+            'isAddon': true,
+          },
+        ]),
+        'stall_orders': jsonEncode([]),
+        'stall_next_token': 101,
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('+ Add-on'), findsOneWidget);
+
+      // 1. Try tapping Add-on with empty cart -> blocked
+      await tester.tap(find.text('Extra Cheese (Addons)'));
+      await tester.pump();
+
+      expect(
+        find.text(
+          'Add-ons must be linked to an item. Please add a main item first.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('TAP ITEMS TO START (#101)'), findsOneWidget);
+
+      // Wait for snackbar to dismiss
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+
+      // 2. Add main item (Veg Burger)
+      await tester.tap(find.text('Veg Burger (Fast Food)'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('PUNCH ORDER (#101) • ₹80'), findsOneWidget);
+
+      // 3. Tap Add-on now -> links to the single item
+      await tester.tap(find.text('Extra Cheese (Addons)'));
+      await tester.pumpAndSettle();
+
+      // Cart total should now be 80 + 20 = 100
+      expect(find.text('PUNCH ORDER (#101) • ₹100'), findsOneWidget);
+
+      // Open cart bottom sheet and verify item name has bracketed prefix
+      await tester.tap(find.text('View Cart'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('[Extra Cheese] Veg Burger (Fast Food)'), findsOneWidget);
+      expect(find.text('₹100 each'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Centralized slash selection modal keeps Rice / Noodles category intact in UI and prompts for category when clicked',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(800, 1400);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      SharedPreferences.setMockInitialValues({
+        'stall_menu': jsonEncode([
+          {
+            'id': 'item_combo',
+            'name': 'Fried Rice / Hakka Noodles',
+            'price': 120.0,
+            'category': 'Rice / Noodles',
+          },
+          {
+            'id': 'item_pure_cat',
+            'name': 'Schezwan Platter',
+            'price': 130.0,
+            'category': 'Rice / Noodles',
+          },
+          {
+            'id': 'item_addon_cm',
+            'name': 'Cheese / Mayo',
+            'price': 25.0,
+            'category': 'Addons',
+            'isAddon': true,
+          },
+        ]),
+        'stall_orders': jsonEncode([]),
+        'stall_next_token': 101,
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      // 1. Verify category chip is intact as 'Rice / Noodles' (NOT split into 'Rice' and 'Noodles')
+      expect(find.widgetWithText(ChoiceChip, 'Rice / Noodles'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Rice'), findsNothing);
+      expect(find.widgetWithText(ChoiceChip, 'Noodles'), findsNothing);
+
+      // 2. Tap item with category 'Rice / Noodles' (Schezwan Platter)
+      await tester.tap(find.text('Schezwan Platter (Rice / Noodles)').first);
+      await tester.pumpAndSettle();
+
+      // Modal appears asking which category in Rice / Noodles!
+      expect(find.text('Select Category'), findsOneWidget);
+      expect(find.text('SELECT CATEGORY'), findsOneWidget);
+      expect(find.descendant(of: find.byType(BottomSheet), matching: find.text('Rice')), findsOneWidget);
+      expect(find.descendant(of: find.byType(BottomSheet), matching: find.text('Noodles')), findsOneWidget);
+
+      // Tap 'Rice' inside modal (single-tap fast-path adds Schezwan Platter (Rice) to cart and dismisses)
+      await tester.tap(find.byKey(const ValueKey('cat_choice_Rice')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('PUNCH ORDER (#101) • ₹130'), findsOneWidget);
+
+      // 3. Tap Addon with slash in name (Cheese / Mayo)
+      await tester.tap(find.text('Cheese / Mayo (Addons)'));
+      await tester.pumpAndSettle();
+
+      // Modal appears for addon with variants & quantity steppers
+      expect(find.text('Customize Extra'), findsOneWidget);
+      expect(find.text('CHOOSE EXTRAS & QUANTITIES'), findsOneWidget);
+      expect(find.text('Cheese'), findsOneWidget);
+      expect(find.text('Mayo'), findsOneWidget);
+
+      // Increment Cheese to 2x
+      final addButtons = find.descendant(of: find.byType(BottomSheet), matching: find.byIcon(Icons.add));
+      await tester.tap(addButtons.first); // Cheese +
+      await tester.pumpAndSettle();
+
+      // Verify button reflects 2x Cheese
+      expect(find.textContaining('2x Cheese'), findsOneWidget);
+
+      // Tap confirmation button
+      await tester.tap(find.textContaining('Add [2x Cheese] to Schezwan Platter (Rice)'));
+      await tester.pumpAndSettle();
+
+      // Cart total should now be 130 + 25*2 = 180
+      expect(find.text('PUNCH ORDER (#101) • ₹180'), findsOneWidget);
+
+      // 4. Open cart bottom sheet and verify centralized displayName with [2x Cheese] and resolved category (Rice)
+      await tester.tap(find.text('View Cart'));
+      await tester.pumpAndSettle();
+
+      final cartItemText = tester.widget<Text>(find.text('[2x Cheese] Schezwan Platter (Rice)'));
+      expect(cartItemText.overflow, isNull);
+      expect(cartItemText.maxLines, isNull);
+
+      expect(find.text('[2x Cheese] Schezwan Platter (Rice)'), findsOneWidget);
+      expect(find.text('₹180 each'), findsOneWidget);
+
+      // 5. Punch order and verify on Active Orders
+      await tester.tap(find.text('PUNCH ORDER (#101) • ₹180').first, warnIfMissed: false);
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('[2x Cheese] Schezwan Platter (Rice)'), findsOneWidget);
+      final activeItemText = tester.widget<Text>(find.text('[2x Cheese] Schezwan Platter (Rice)'));
+      expect(activeItemText.overflow, isNull);
+      expect(activeItemText.maxLines, isNull);
+
+      // 6. Confirm payment via default UPI (1-tap complete)
+      await tester.tap(find.byKey(const ValueKey('confirm_payment_btn_101')));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Scan UPI QR on stall terminal'), findsOneWidget);
+      await tester.tap(find.text('Confirm Payment & Complete'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Payment confirmed for Order #101 via UPI!'), findsOneWidget);
+      expect(find.text('Paid • UPI'), findsWidgets);
+
+      // 7. Verify in Item Summary tab that item name is fully visible
+      await tester.tap(find.text('Item Summary'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('[2x Cheese] Schezwan Platter (Rice)'), findsOneWidget);
+      final summaryItemText = tester.widget<Text>(find.text('[2x Cheese] Schezwan Platter (Rice)'));
+      expect(summaryItemText.overflow, isNull);
+      expect(summaryItemText.maxLines, isNull);
     },
   );
 }

@@ -8,6 +8,7 @@ class MenuItem {
   final double price;
   final String category;
   final int? colorHex;
+  final bool isAddon;
 
   const MenuItem({
     required this.id,
@@ -15,7 +16,59 @@ class MenuItem {
     required this.price,
     this.category = 'General',
     this.colorHex,
+    this.isAddon = false,
   });
+
+  /// Check if this item qualifies as an add-on either via explicit flag
+  /// or category name containing 'addon' or 'extra'.
+  bool get effectiveIsAddon {
+    if (isAddon) return true;
+    final cat = category.toLowerCase();
+    return cat.contains('addon') || cat.contains('add-on') || cat == 'extras' || cat == 'extra';
+  }
+
+  /// Centralized display name showing item name and category in brackets:
+  /// e.g. "Masala Chai (Beverages)" or "[Extra Cheese] Veg Burger (Fast Food)".
+  String get displayName {
+    final cat = category.trim();
+    if (cat.isNotEmpty && !name.endsWith('($cat)')) {
+      return '$name ($cat)';
+    }
+    return name;
+  }
+
+  /// Whether the item name contains '/' indicating multiple or-variants.
+  bool get hasSlashNameVariants => name.contains('/');
+
+  /// List of separated variant names when split by '/'.
+  List<String> get slashNameVariants {
+    if (!hasSlashNameVariants) return [name];
+    return name
+        .split('/')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  /// Whether the category contains '/' indicating multiple or-categories.
+  bool get hasSlashCategoryVariants => category.contains('/');
+
+  /// List of separated category names when split by '/'.
+  List<String> get slashCategoryVariants {
+    if (!hasSlashCategoryVariants) return [category];
+    return category
+        .split('/')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  /// Whether the item has any '/' variants in name or category.
+  bool get hasAnySlashVariants => hasSlashNameVariants || hasSlashCategoryVariants;
+
+  /// Backwards-compatible aliases
+  bool get hasSlashVariants => hasSlashNameVariants;
+  List<String> get slashVariants => slashNameVariants;
 
   MenuItem copyWith({
     String? id,
@@ -24,6 +77,7 @@ class MenuItem {
     String? category,
     int? colorHex,
     bool clearColor = false,
+    bool? isAddon,
   }) {
     return MenuItem(
       id: id ?? this.id,
@@ -31,6 +85,7 @@ class MenuItem {
       price: price ?? this.price,
       category: category ?? this.category,
       colorHex: clearColor ? null : (colorHex ?? this.colorHex),
+      isAddon: isAddon ?? this.isAddon,
     );
   }
 
@@ -40,6 +95,7 @@ class MenuItem {
         'price': price,
         'category': category,
         if (colorHex != null) 'colorHex': colorHex,
+        if (isAddon) 'isAddon': isAddon,
       };
 
   factory MenuItem.fromJson(Map<String, dynamic> map) {
@@ -49,12 +105,14 @@ class MenuItem {
     final parsedColor = map['colorHex'] != null
         ? (map['colorHex'] as num?)?.toInt()
         : CategoryColorHelper.parseColor(map['color']);
+    final isAddonExplicit = map['isAddon'] == true;
     return MenuItem(
       id: map['id']?.toString() ?? '',
       name: map['name']?.toString() ?? '',
       price: (map['price'] as num?)?.toDouble() ?? 0.0,
       category: category,
       colorHex: parsedColor ?? CategoryColorHelper.getColorForCategory(category),
+      isAddon: isAddonExplicit,
     );
   }
 }
@@ -189,5 +247,15 @@ class AggregatedOrderItem {
     required this.tickets,
     this.colorHex,
   });
+
+  /// Centralized display name showing item name with category in brackets:
+  /// e.g. "Masala Chai (Beverages)".
+  String get displayName {
+    final cat = category.trim();
+    if (cat.isNotEmpty && !itemName.endsWith('($cat)')) {
+      return '$itemName ($cat)';
+    }
+    return itemName;
+  }
 }
 

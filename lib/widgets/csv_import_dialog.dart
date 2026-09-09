@@ -498,8 +498,7 @@ class _CsvImportDialogState<T> extends State<CsvImportDialog<T>>
                               const SizedBox(width: 6),
                               Expanded(
                                 child: Text(
-                                  '${item.name} (${item.category})',
-                                  overflow: TextOverflow.ellipsis,
+                                  item.displayName,
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               ),

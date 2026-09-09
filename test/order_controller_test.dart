@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:counter_app/controllers/order_controller.dart';
+import 'package:counter_app/data/models/stall_models.dart';
 import 'package:counter_app/data/services/stall_storage_service.dart';
 
 void main() {
@@ -320,6 +321,376 @@ void main() {
       // Delete Order 102
       await controller.deleteOrder(102);
       expect(controller.combinedActiveOrders, isEmpty);
+    });
+  });
+
+  group('OrderController - Slash Items & Add-on Linking', () {
+    test('detects slash variants and adds selected variant to cart', () async {
+      final orItem = MenuItem(
+        id: 'item_or',
+        name: 'Tea / Coffee / Green Tea',
+        price: 30.0,
+        category: 'Hot Drinks',
+      );
+      await controller.addMenuItem(orItem);
+
+      expect(orItem.hasSlashVariants, isTrue);
+      expect(orItem.slashVariants, ['Tea', 'Coffee', 'Green Tea']);
+
+      controller.addVariantToCart(orItem, 'Coffee');
+      expect(controller.cart['item_or_var_Coffee'], 1);
+      expect(controller.cartTotal, 30.0);
+
+      final found = controller.findItem('item_or_var_Coffee');
+      expect(found.name, 'Coffee');
+      expect(found.price, 30.0);
+      expect(found.category, 'Hot Drinks');
+    });
+
+    test('preserves categories containing slash as single intact filter chips', () {
+      final itemComboCat = MenuItem(
+        id: 'item_combo_cat',
+        name: 'French Fries',
+        price: 60.0,
+        category: 'Snacks / Fast Food',
+      );
+      controller.addMenuItem(itemComboCat);
+
+      expect(controller.categories, contains('Snacks / Fast Food'));
+      expect(controller.categories.contains('Fast Food'), isFalse);
+
+      // Filter by 'Snacks / Fast Food'
+      controller.selectCategory('Snacks / Fast Food');
+      expect(controller.filteredMenu.any((m) => m.name == 'French Fries'), isTrue);
+    });
+
+    test('prevents add-ons from being added standalone', () {
+      final addon = MenuItem(
+        id: 'addon_cheese',
+        name: 'Extra Cheese',
+        price: 20.0,
+        category: 'Addons',
+        isAddon: true,
+      );
+      expect(addon.effectiveIsAddon, isTrue);
+
+      expect(
+        () => controller.addToCart(addon),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('links add-on to base item, formats name with bracket prefix, and sums price', () async {
+      final burger = MenuItem(
+        id: 'item_burger',
+        name: 'Veg Burger',
+        price: 80.0,
+        category: 'Fast Food',
+      );
+      final addon = MenuItem(
+        id: 'addon_cheese',
+        name: 'Extra Cheese',
+        price: 20.0,
+        category: 'Addons',
+        isAddon: true,
+      );
+
+      await controller.addMenuItem(burger);
+      await controller.addMenuItem(addon);
+
+      // Add 2 burgers to cart
+      controller.addToCart(burger);
+      controller.addToCart(burger);
+      expect(controller.cart[burger.id], 2);
+      expect(controller.cartTotal, 160.0);
+
+      // Link Extra Cheese to one of the burgers
+      controller.addAddonToCart(targetCartItemId: burger.id, addon: addon);
+
+      // Cart should now have 1x Veg Burger and 1x [Extra Cheese] Veg Burger
+      expect(controller.cart[burger.id], 1);
+      expect(controller.cart['${burger.id}+${addon.id}'], 1);
+
+      // Total price: 80 + (80 + 20) = 180
+      expect(controller.cartTotal, 180.0);
+
+      final compositeItem = controller.findItem('${burger.id}+${addon.id}');
+      expect(compositeItem.name, '[Extra Cheese] Veg Burger');
+      expect(compositeItem.price, 100.0);
+
+      // Punch order and check summary string
+      final orderResult = await controller.punchOrUpdateOrder(
+        customerName: 'Kunal',
+        paymentMethod: 'Cash',
+        isPaid: true,
+      );
+
+      final punchedOrder = controller.orders.firstWhere((o) => o.token == orderResult.token);
+      expect(punchedOrder.itemsSummary, contains('1x Veg Burger'));
+      expect(punchedOrder.itemsSummary, contains('1x [Extra Cheese] Veg Burger'));
+      expect(punchedOrder.total, 180.0);
+    });
+
+    test('kitchen item summary tracks customized add-on item as a separate row from base item', () async {
+      final burger = MenuItem(
+        id: 'item_burger_kitchen',
+        name: 'Veg Burger',
+        price: 80.0,
+        category: 'Fast Food',
+      );
+      final addon = MenuItem(
+        id: 'addon_cheese_kitchen',
+        name: 'Extra Cheese',
+        price: 20.0,
+        category: 'Addons',
+        isAddon: true,
+      );
+
+      await controller.addMenuItem(burger);
+      await controller.addMenuItem(addon);
+
+      // Order 1: 1x regular Veg Burger, 1x [Extra Cheese] Veg Burger
+      controller.addToCart(burger);
+      controller.addToCart(burger);
+      controller.addAddonToCart(targetCartItemId: burger.id, addon: addon);
+      await controller.punchOrUpdateOrder(customerName: 'Order 1', paymentMethod: 'Cash', isPaid: true);
+
+      // Order 2: 2x regular Veg Burger
+      controller.addToCart(burger);
+      controller.addToCart(burger);
+      await controller.punchOrUpdateOrder(customerName: 'Order 2', paymentMethod: 'UPI', isPaid: true);
+
+      final aggregated = controller.combinedActiveOrders;
+
+      // Veg Burger and [Extra Cheese] Veg Burger must be distinct rows!
+      final regularBurgers = aggregated.firstWhere((a) => a.itemName == 'Veg Burger');
+      final cheeseBurgers = aggregated.firstWhere((a) => a.itemName == '[Extra Cheese] Veg Burger');
+
+      expect(regularBurgers.totalQuantity, 3); // 1 from Order 1 + 2 from Order 2
+      expect(cheeseBurgers.totalQuantity, 1); // 1 from Order 1
+    });
+
+    test('findItem resolves _var_, _cat_, and composite items with addon variants', () async {
+      final riceNoodles = MenuItem(
+        id: 'item_rice_noodles',
+        name: 'Fried Rice / Hakka Noodles',
+        price: 120.0,
+        category: 'Rice / Noodles',
+      );
+      final addonCheeseMayo = MenuItem(
+        id: 'addon_cheese_mayo',
+        name: 'Cheese / Mayo',
+        price: 30.0,
+        category: 'Extras',
+        isAddon: true,
+      );
+
+      await controller.addMenuItem(riceNoodles);
+      await controller.addMenuItem(addonCheeseMayo);
+
+      // 1. Resolve variant name only
+      final varItem = controller.findItem('item_rice_noodles_var_Fried Rice');
+      expect(varItem.name, 'Fried Rice');
+      expect(varItem.category, 'Rice / Noodles');
+      expect(varItem.price, 120.0);
+      expect(varItem.displayName, 'Fried Rice (Rice / Noodles)');
+
+      // 2. Resolve category only
+      final catItem = controller.findItem('item_rice_noodles_cat_Rice');
+      expect(catItem.name, 'Fried Rice / Hakka Noodles');
+      expect(catItem.category, 'Rice');
+      expect(catItem.price, 120.0);
+      expect(catItem.displayName, 'Fried Rice / Hakka Noodles (Rice)');
+
+      // 3. Resolve both variant name and category
+      final bothItem = controller.findItem('item_rice_noodles_var_Fried Rice_cat_Rice');
+      expect(bothItem.name, 'Fried Rice');
+      expect(bothItem.category, 'Rice');
+      expect(bothItem.price, 120.0);
+      expect(bothItem.displayName, 'Fried Rice (Rice)');
+
+      // 4. Resolve composite item with addon variant
+      final composite = controller.findItem('item_rice_noodles_var_Fried Rice_cat_Rice+addon_cheese_mayo_var_Cheese');
+      expect(composite.name, '[Cheese] Fried Rice');
+      expect(composite.category, 'Rice');
+      expect(composite.price, 150.0);
+      expect(composite.displayName, '[Cheese] Fried Rice (Rice)');
+    });
+
+    test('addCustomizedItemToCart and addAddonToCart with variant name correctly punch order', () async {
+      final noodles = MenuItem(
+        id: 'item_noodles',
+        name: 'Noodles',
+        price: 100.0,
+        category: 'Rice / Noodles',
+      );
+      final dip = MenuItem(
+        id: 'addon_dip',
+        name: 'Red / Green Chutney',
+        price: 15.0,
+        category: 'Extras',
+        isAddon: true,
+      );
+
+      await controller.addMenuItem(noodles);
+      await controller.addMenuItem(dip);
+
+      // Add noodles with category resolved to Noodles
+      controller.addCustomizedItemToCart(
+        baseItem: noodles,
+        resolvedCategory: 'Noodles',
+      );
+
+      expect(controller.cart['item_noodles_cat_Noodles'], 1);
+      expect(controller.cartBaseItems.length, 1);
+      expect(controller.cartBaseItems.first.displayName, 'Noodles (Noodles)');
+
+      // Link addon with variant 'Green Chutney'
+      controller.addAddonToCart(
+        targetCartItemId: 'item_noodles_cat_Noodles',
+        addon: dip,
+        resolvedAddonName: 'Green Chutney',
+      );
+
+      expect(controller.cart['item_noodles_cat_Noodles+addon_dip_var_Green Chutney'], 1);
+      expect(controller.cartTotal, 115.0);
+
+      final orderResult = await controller.punchOrUpdateOrder(
+        customerName: 'Aarav',
+        paymentMethod: 'UPI',
+        isPaid: true,
+      );
+
+      final punchedOrder = controller.orders.firstWhere((o) => o.token == orderResult.token);
+      final itemsWithCategory = controller.getOrderItemsWithCategory(punchedOrder);
+      expect(itemsWithCategory.first.name, '[Green Chutney] Noodles');
+      expect(itemsWithCategory.first.category, 'Noodles');
+      expect(itemsWithCategory.first.displayName, '[Green Chutney] Noodles (Noodles)');
+    });
+
+    test('same add-on added twice formats as [2x Addon] and calculates accurate price', () async {
+      final burger = MenuItem(
+        id: 'item_burger_xtimes',
+        name: 'Veg Burger',
+        price: 80.0,
+        category: 'Fast Food',
+      );
+      final cheese = MenuItem(
+        id: 'addon_cheese_xtimes',
+        name: 'Extra Cheese',
+        price: 20.0,
+        category: 'Addons',
+        isAddon: true,
+      );
+
+      await controller.addMenuItem(burger);
+      await controller.addMenuItem(cheese);
+
+      controller.addToCart(burger);
+      // Link cheese once
+      controller.addAddonToCart(targetCartItemId: burger.id, addon: cheese);
+
+      expect(controller.cart['${burger.id}+${cheese.id}'], 1);
+      final singleAddonItem = controller.findItem('${burger.id}+${cheese.id}');
+      expect(singleAddonItem.name, '[Extra Cheese] Veg Burger');
+      expect(singleAddonItem.price, 100.0);
+      expect(singleAddonItem.displayName, '[Extra Cheese] Veg Burger (Fast Food)');
+
+      // Link cheese a second time to the same item
+      controller.addAddonToCart(targetCartItemId: '${burger.id}+${cheese.id}', addon: cheese);
+
+      final doubleAddonId = '${burger.id}+${cheese.id}+${cheese.id}';
+      expect(controller.cart[doubleAddonId], 1);
+      expect(controller.cartTotal, 120.0); // 80 + 20*2
+
+      final doubleAddonItem = controller.findItem(doubleAddonId);
+      expect(doubleAddonItem.name, '[2x Extra Cheese] Veg Burger');
+      expect(doubleAddonItem.price, 120.0);
+      expect(doubleAddonItem.displayName, '[2x Extra Cheese] Veg Burger (Fast Food)');
+
+      // Link cheese a third time
+      controller.addAddonToCart(targetCartItemId: doubleAddonId, addon: cheese);
+      final tripleAddonId = '${burger.id}+${cheese.id}+${cheese.id}+${cheese.id}';
+      final tripleAddonItem = controller.findItem(tripleAddonId);
+      expect(tripleAddonItem.name, '[3x Extra Cheese] Veg Burger');
+      expect(tripleAddonItem.price, 140.0);
+    });
+
+    test('multiple different add-ons format properly with x-times for repeated ones', () async {
+      final burger = MenuItem(
+        id: 'item_burger_multi',
+        name: 'Veg Burger',
+        price: 80.0,
+        category: 'Fast Food',
+      );
+      final cheese = MenuItem(
+        id: 'addon_cheese_multi',
+        name: 'Cheese',
+        price: 25.0,
+        category: 'Addons',
+        isAddon: true,
+      );
+      final mayo = MenuItem(
+        id: 'addon_mayo_multi',
+        name: 'Mayo',
+        price: 15.0,
+        category: 'Addons',
+        isAddon: true,
+      );
+
+      await controller.addMenuItem(burger);
+      await controller.addMenuItem(cheese);
+      await controller.addMenuItem(mayo);
+
+      controller.addToCart(burger);
+
+      // Add 2x Cheese and 1x Mayo using addMultipleAddonsToCart
+      controller.addMultipleAddonsToCart(
+        targetCartItemId: burger.id,
+        addons: [
+          (addon: cheese, resolvedName: null, quantity: 2),
+          (addon: mayo, resolvedName: null, quantity: 1),
+        ],
+      );
+
+      final compositeId = '${burger.id}+${cheese.id}+${cheese.id}+${mayo.id}';
+      expect(controller.cart[compositeId], 1);
+      expect(controller.cartTotal, 145.0); // 80 + 25*2 + 15
+
+      final compositeItem = controller.findItem(compositeId);
+      expect(compositeItem.name, '[2x Cheese] [Mayo] Veg Burger');
+      expect(compositeItem.price, 145.0);
+      expect(compositeItem.displayName, '[2x Cheese] [Mayo] Veg Burger (Fast Food)');
+    });
+
+    test('Rice / Noodles category is preserved intact as single category chip and grouped menu section', () async {
+      final rice = MenuItem(
+        id: 'item_rice',
+        name: 'Fried Rice',
+        price: 120.0,
+        category: 'Rice / Noodles',
+      );
+      final noodles = MenuItem(
+        id: 'item_noodles_alone',
+        name: 'Hakka Noodles',
+        price: 110.0,
+        category: 'Rice / Noodles',
+      );
+
+      await controller.addMenuItem(rice);
+      await controller.addMenuItem(noodles);
+
+      // categories getter preserves 'Rice / Noodles' intact
+      expect(controller.categories.contains('Rice / Noodles'), isTrue);
+      expect(controller.categories.contains('Rice'), isFalse);
+      expect(controller.categories.contains('Noodles'), isFalse);
+
+      // groupedMenu groups both items under 'Rice / Noodles'
+      final grouped = controller.groupedMenu;
+      expect(grouped.containsKey('Rice / Noodles'), isTrue);
+      expect(grouped['Rice / Noodles']!.length, 2);
+      expect(grouped.containsKey('Rice'), isFalse);
+      expect(grouped.containsKey('Noodles'), isFalse);
     });
   });
 }

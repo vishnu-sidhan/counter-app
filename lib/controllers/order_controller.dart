@@ -48,14 +48,112 @@ class OrderController extends ChangeNotifier {
   /// Total count of items in the current active cart.
   int get cartItemCount => _cart.values.fold(0, (a, b) => a + b);
 
+  /// Resolves an item by its ID.
+  /// Handles base menu items, slash variant selections (e.g. itemId_var_option),
+  /// and composite items containing linked add-ons (e.g. baseId+addonId1+addonId2).
+  MenuItem findItem(String itemId) {
+    // 1. Direct match in menu
+    for (final m in _menu) {
+      if (m.id == itemId) return m;
+    }
+
+    // 2. Composite items with add-ons (e.g. "baseItemId+addonId1")
+    if (itemId.contains('+')) {
+      final parts = itemId.split('+');
+      final baseId = parts[0];
+      final addonIds = parts.sublist(1);
+      final baseItem = findItem(baseId);
+
+      if (baseItem.id.isNotEmpty) {
+        final addonItems = <MenuItem>[];
+        for (final aId in addonIds) {
+          final addon = findItem(aId);
+          if (addon.id.isNotEmpty) {
+            addonItems.add(addon);
+          }
+        }
+
+        if (addonItems.isNotEmpty) {
+          // Group add-ons by name and count occurrences to format as "x-times" if count > 1
+          final Map<String, ({int count, double singlePrice})> addonGroups = {};
+          for (final addon in addonItems) {
+            final existing = addonGroups[addon.name];
+            if (existing != null) {
+              addonGroups[addon.name] = (
+                count: existing.count + 1,
+                singlePrice: existing.singlePrice,
+              );
+            } else {
+              addonGroups[addon.name] = (
+                count: 1,
+                singlePrice: addon.price,
+              );
+            }
+          }
+
+          final prefix = addonGroups.entries.map((entry) {
+            final name = entry.key;
+            final count = entry.value.count;
+            return count > 1 ? '[$count' 'x $name]' : '[$name]';
+          }).join(' ');
+
+          final addedPrice = addonGroups.values.fold(
+            0.0,
+            (sum, g) => sum + g.singlePrice * g.count,
+          );
+
+          return MenuItem(
+            id: itemId,
+            name: '$prefix ${baseItem.name}',
+            price: baseItem.price + addedPrice,
+            category: baseItem.category,
+            colorHex: baseItem.colorHex,
+            isAddon: false,
+          );
+        }
+      }
+    }
+
+    // 3. Customized variant / category items (e.g. "item_chai_var_Tea", "item_rice_cat_Rice", or "item_123_var_Fried Rice_cat_Rice")
+    if (itemId.contains('_var_') || itemId.contains('_cat_')) {
+      String remaining = itemId;
+      String? resolvedCat;
+      final lastCatIdx = remaining.lastIndexOf('_cat_');
+      if (lastCatIdx != -1) {
+        resolvedCat = remaining.substring(lastCatIdx + 5);
+        remaining = remaining.substring(0, lastCatIdx);
+      }
+      String? resolvedName;
+      final lastVarIdx = remaining.lastIndexOf('_var_');
+      if (lastVarIdx != -1) {
+        resolvedName = remaining.substring(lastVarIdx + 5);
+        remaining = remaining.substring(0, lastVarIdx);
+      }
+      final baseId = remaining;
+      final baseItem = findItem(baseId);
+      return MenuItem(
+        id: itemId,
+        name: resolvedName ?? baseItem.name,
+        price: baseItem.price,
+        category: resolvedCat ?? baseItem.category,
+        colorHex: baseItem.colorHex,
+        isAddon: baseItem.isAddon,
+      );
+    }
+
+    return MenuItem(
+      id: itemId,
+      name: itemId.isNotEmpty ? itemId : 'Item',
+      price: 0.0,
+      category: 'General',
+    );
+  }
+
   /// Computes the total monetary price of items in the cart.
   double get cartTotal {
     double total = 0.0;
     _cart.forEach((itemId, qty) {
-      final item = _menu.firstWhere(
-        (m) => m.id == itemId,
-        orElse: () => const MenuItem(id: '', name: '', price: 0.0),
-      );
+      final item = findItem(itemId);
       total += item.price * qty;
     });
     return total;
@@ -75,7 +173,10 @@ class OrderController extends ChangeNotifier {
   /// Filtered menu based on selected category chip.
   List<MenuItem> get filteredMenu {
     if (_selectedCategory == 'All') return _menu;
-    return _menu.where((m) => m.category == _selectedCategory).toList();
+    return _menu
+        .where((m) =>
+            m.category.trim().toLowerCase() == _selectedCategory.toLowerCase())
+        .toList();
   }
 
   /// Menu items grouped by category for expandable accordion rendering.
@@ -92,6 +193,7 @@ class OrderController extends ChangeNotifier {
 
   /// Consolidated items view across all active orders with confirmed payment.
   /// Aggregates total quantities per item and tracks ticket tags.
+  /// Custom composite items with add-ons remain separate entries.
   List<AggregatedOrderItem> get combinedActiveOrders {
     final confirmed = confirmedActiveOrders;
     if (confirmed.isEmpty) return const [];
@@ -104,15 +206,7 @@ class OrderController extends ChangeNotifier {
         // Structured items map available
         order.items.forEach((itemId, qty) {
           if (qty <= 0) return;
-          final item = _menu.firstWhere(
-            (m) => m.id == itemId,
-            orElse: () => MenuItem(
-              id: itemId,
-              name: itemId,
-              price: 0,
-              category: 'General',
-            ),
-          );
+          final item = findItem(itemId);
 
           final acc = accumulators.putIfAbsent(
             item.id.isNotEmpty ? item.id : item.name,
@@ -178,28 +272,21 @@ class OrderController extends ChangeNotifier {
   }
 
   /// Extracts individual items with their corresponding category and color for an order.
-  List<({String name, int quantity, String category, int? colorHex})>
+  List<({String name, int quantity, String category, int? colorHex, String displayName})>
       getOrderItemsWithCategory(StallOrder order) {
     final result =
-        <({String name, int quantity, String category, int? colorHex})>[];
+        <({String name, int quantity, String category, int? colorHex, String displayName})>[];
 
     if (order.items.isNotEmpty) {
       order.items.forEach((itemId, qty) {
         if (qty <= 0) return;
-        final item = _menu.firstWhere(
-          (m) => m.id == itemId,
-          orElse: () => MenuItem(
-            id: itemId,
-            name: itemId,
-            price: 0,
-            category: 'General',
-          ),
-        );
+        final item = findItem(itemId);
         result.add((
           name: item.name,
           quantity: qty,
           category: item.category,
           colorHex: item.colorHex,
+          displayName: item.displayName,
         ));
       });
     } else if (order.itemsSummary.isNotEmpty) {
@@ -224,6 +311,7 @@ class OrderController extends ChangeNotifier {
             quantity: qty,
             category: item.category,
             colorHex: item.colorHex,
+            displayName: item.displayName,
           ));
         }
       }
@@ -267,9 +355,152 @@ class OrderController extends ChangeNotifier {
   // CART ACTIONS
   // ---------------------------------------------------------------------------
 
+  /// Returns items currently in the cart that can receive add-ons.
+  List<MenuItem> get cartBaseItems {
+    final list = <MenuItem>[];
+    for (final entry in _cart.entries) {
+      if (entry.value > 0) {
+        final item = findItem(entry.key);
+        if (!item.effectiveIsAddon) {
+          list.add(item);
+        }
+      }
+    }
+    return list;
+  }
+
+  /// Adds a standard item to the cart.
+  /// If the item is an Add-on, throws a StateError because add-ons cannot be added alone.
   void addToCart(MenuItem item) {
+    if (item.effectiveIsAddon) {
+      throw StateError(
+        'Add-ons cannot be added standalone. They must be linked to a main item.',
+      );
+    }
     _cart[item.id] = (_cart[item.id] ?? 0) + 1;
     notifyListeners();
+  }
+
+  /// Adds a specific variant of an or-item (slash item) to the cart.
+  void addVariantToCart(MenuItem baseItem, String variantName) {
+    final variantId = '${baseItem.id}_var_$variantName';
+    _cart[variantId] = (_cart[variantId] ?? 0) + 1;
+    notifyListeners();
+  }
+
+  /// Adds an item with custom variant name and/or resolved category to the cart.
+  void addCustomizedItemToCart({
+    required MenuItem baseItem,
+    String? resolvedName,
+    String? resolvedCategory,
+  }) {
+    if (baseItem.effectiveIsAddon) {
+      throw StateError(
+        'Add-ons cannot be added standalone. They must be linked to a main item.',
+      );
+    }
+    String customId = baseItem.id;
+    if (resolvedName != null &&
+        resolvedName.trim().isNotEmpty &&
+        resolvedName.trim() != baseItem.name.trim()) {
+      customId += '_var_${resolvedName.trim()}';
+    }
+    if (resolvedCategory != null &&
+        resolvedCategory.trim().isNotEmpty &&
+        resolvedCategory.trim() != baseItem.category.trim()) {
+      customId += '_cat_${resolvedCategory.trim()}';
+    }
+    _cart[customId] = (_cart[customId] ?? 0) + 1;
+    notifyListeners();
+  }
+
+  /// Links an add-on to an existing item in the cart.
+  /// Converts 1 unit of targetCartItemId into targetCartItemId+addonId (repeated quantity times).
+  /// Supports resolvedAddonName and quantity.
+  void addAddonToCart({
+    required String targetCartItemId,
+    required MenuItem addon,
+    String? resolvedAddonName,
+    String? resolvedAddonCategory,
+    int quantity = 1,
+  }) {
+    if (quantity <= 0) return;
+    if (!_cart.containsKey(targetCartItemId) || _cart[targetCartItemId]! <= 0) {
+      throw StateError(
+        'Cannot link add-on to an item not present in the active cart.',
+      );
+    }
+
+    // Decrement the target base item in cart
+    if (_cart[targetCartItemId]! > 1) {
+      _cart[targetCartItemId] = _cart[targetCartItemId]! - 1;
+    } else {
+      _cart.remove(targetCartItemId);
+    }
+
+    String addonId = addon.id;
+    if (resolvedAddonName != null &&
+        resolvedAddonName.trim().isNotEmpty &&
+        resolvedAddonName.trim() != addon.name.trim()) {
+      addonId += '_var_${resolvedAddonName.trim()}';
+    }
+    if (resolvedAddonCategory != null &&
+        resolvedAddonCategory.trim().isNotEmpty &&
+        resolvedAddonCategory.trim() != addon.category.trim()) {
+      addonId += '_cat_${resolvedAddonCategory.trim()}';
+    }
+
+    // Append addonId repeated quantity times
+    final tokens = List.filled(quantity, addonId).join('+');
+    final compositeId = '$targetCartItemId+$tokens';
+    _cart[compositeId] = (_cart[compositeId] ?? 0) + 1;
+    notifyListeners();
+  }
+
+  /// Links multiple add-ons with their respective quantities to a cart item in a single action.
+  void addMultipleAddonsToCart({
+    required String targetCartItemId,
+    required List<({MenuItem addon, String? resolvedName, int quantity})> addons,
+  }) {
+    final validAddons = addons.where((a) => a.quantity > 0).toList();
+    if (validAddons.isEmpty) return;
+
+    if (!_cart.containsKey(targetCartItemId) || _cart[targetCartItemId]! <= 0) {
+      throw StateError(
+        'Cannot link add-on to an item not present in the active cart.',
+      );
+    }
+
+    // Decrement the target base item in cart
+    if (_cart[targetCartItemId]! > 1) {
+      _cart[targetCartItemId] = _cart[targetCartItemId]! - 1;
+    } else {
+      _cart.remove(targetCartItemId);
+    }
+
+    final addonTokens = <String>[];
+    for (final item in validAddons) {
+      String aId = item.addon.id;
+      if (item.resolvedName != null &&
+          item.resolvedName!.trim().isNotEmpty &&
+          item.resolvedName!.trim() != item.addon.name.trim()) {
+        aId += '_var_${item.resolvedName!.trim()}';
+      }
+      for (int i = 0; i < item.quantity; i++) {
+        addonTokens.add(aId);
+      }
+    }
+
+    final compositeId = '$targetCartItemId+${addonTokens.join('+')}';
+    _cart[compositeId] = (_cart[compositeId] ?? 0) + 1;
+    notifyListeners();
+  }
+
+  void incrementCartItem(String itemId) {
+    if (_cart.containsKey(itemId)) {
+      _cart[itemId] = _cart[itemId]! + 1;
+      notifyListeners();
+    }
   }
 
   void removeFromCart(String itemId) {
@@ -337,8 +568,6 @@ class OrderController extends ChangeNotifier {
 
   /// Places a new order or updates an existing order in-place if editingOrderId is set.
   /// Returns a tuple of (token, isEdit).
-  /// Places a new order or updates an existing order in-place if editingOrderId is set.
-  /// Returns a tuple of (token, isEdit).
   Future<({int token, bool isEdit})> punchOrUpdateOrder({
     required String? customerName,
     String? paymentMethod,
@@ -350,10 +579,7 @@ class OrderController extends ChangeNotifier {
 
     final summaryParts = <String>[];
     _cart.forEach((itemId, qty) {
-      final item = _menu.firstWhere(
-        (m) => m.id == itemId,
-        orElse: () => MenuItem(id: itemId, name: 'Item', price: 0),
-      );
+      final item = findItem(itemId);
       summaryParts.add('${qty}x ${item.name}');
     });
     final summary = summaryParts.join(', ');
@@ -471,7 +697,11 @@ class OrderController extends ChangeNotifier {
 
   Future<void> deleteMenuItem(String id) async {
     _menu.removeWhere((m) => m.id == id);
-    _cart.remove(id);
+    _cart.removeWhere((cartId, _) =>
+        cartId == id ||
+        cartId.startsWith('$id+') ||
+        cartId.contains('+$id') ||
+        cartId.startsWith('${id}_var_'));
     if (_selectedCategory != 'All' &&
         !_menu.any((m) => m.category == _selectedCategory)) {
       _selectedCategory = 'All';

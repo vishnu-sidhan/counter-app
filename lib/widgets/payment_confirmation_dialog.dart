@@ -54,7 +54,7 @@ class PaymentConfirmationDialog extends StatefulWidget {
 }
 
 class _PaymentConfirmationDialogState extends State<PaymentConfirmationDialog> {
-  String _selectedMethod = 'Cash'; // Default
+  String _selectedMethod = 'UPI'; // Default to UPI
   final TextEditingController _receivedCtrl = TextEditingController();
 
   @override

@@ -139,6 +139,809 @@ class _StallPosScreenState extends State<StallPosScreen>
     _controller.addToCart(item);
   }
 
+  void _handleMenuItemTap(MenuItem item) {
+    HapticFeedback.selectionClick();
+
+    // 1. Check if item is an Add-on
+    if (item.effectiveIsAddon) {
+      final baseItems = _controller.cartBaseItems;
+      if (baseItems.isEmpty) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Add-ons must be linked to an item. Please add a main item first.',
+            ),
+            backgroundColor: Colors.deepOrange,
+            behavior: SnackBarBehavior.floating,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      // If addon has slash variants (e.g. Cheese / Mayo) OR multiple base items in cart
+      if (item.hasAnySlashVariants || baseItems.length > 1) {
+        _showCentralizedSlashSelectionModal(item);
+        return;
+      }
+
+      // Single base item & no slash in addon
+      final target = baseItems.first;
+      _controller.addAddonToCart(
+        targetCartItemId: target.id,
+        addon: item,
+      );
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Added [${item.name}] to ${target.displayName}'),
+          duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    // 2. Check if item has '/' variants in name or category (e.g. Rice / Noodles or Fried Rice / Hakka Noodles)
+    if (item.hasAnySlashVariants) {
+      _showCentralizedSlashSelectionModal(item);
+      return;
+    }
+
+    // 3. Regular item
+    _addToCart(item);
+  }
+
+  void _showCentralizedSlashSelectionModal(MenuItem item) {
+    final isAddon = item.effectiveIsAddon;
+    final hasNameVariants = item.hasSlashNameVariants;
+    final nameVariants = item.slashNameVariants;
+    final hasCategoryVariants = item.hasSlashCategoryVariants;
+    final categoryVariants = item.slashCategoryVariants;
+    final baseItems = isAddon ? _controller.cartBaseItems : <MenuItem>[];
+
+    // Add-on state: quantity stepper or multi-variant quantities
+    int singleAddonQty = 1;
+    final Map<String, int> variantQuantities = {
+      for (final v in nameVariants) v: (v == nameVariants.first ? 1 : 0),
+    };
+    MenuItem? selectedBaseItem = baseItems.isNotEmpty ? baseItems.first : null;
+
+    // Regular item selection state
+    String selectedName = nameVariants.isNotEmpty ? nameVariants.first : item.name;
+    String selectedCategory = categoryVariants.isNotEmpty ? categoryVariants.first : item.category;
+
+    final itemColor = item.colorHex != null
+        ? Color(item.colorHex!)
+        : _getCategoryColor(item.category);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            final target = selectedBaseItem ?? (baseItems.isNotEmpty ? baseItems.first : null);
+
+            // Calculate total add-on count and cost for dynamic preview
+            int totalAddonCount = 0;
+            double totalAddonPrice = 0.0;
+            String addonSummaryStr = '';
+
+            if (isAddon) {
+              if (hasNameVariants) {
+                totalAddonCount = variantQuantities.values.fold(0, (a, b) => a + b);
+                totalAddonPrice = totalAddonCount * item.price;
+                final parts = <String>[];
+                variantQuantities.forEach((v, q) {
+                  if (q > 0) parts.add(q > 1 ? '${q}x $v' : v);
+                });
+                addonSummaryStr = parts.map((p) => '[$p]').join(' ');
+              } else {
+                totalAddonCount = singleAddonQty;
+                totalAddonPrice = singleAddonQty * item.price;
+                addonSummaryStr = singleAddonQty > 1
+                    ? '[${singleAddonQty}x ${item.name}]'
+                    : '[${item.name}]';
+              }
+            }
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.85,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withAlpha(60),
+                    blurRadius: 20,
+                    offset: const Offset(0, -6),
+                  ),
+                ],
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      isAddon
+                          ? 'Customize Extra'
+                          : (hasCategoryVariants && !hasNameVariants
+                              ? 'Select Category'
+                              : 'Select Option'),
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isAddon
+                          ? '${item.displayName} • +₹${item.price.toStringAsFixed(0)} each'
+                          : '${item.displayName} • ₹${item.price.toStringAsFixed(0)}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    Flexible(
+                      child: SingleChildScrollView(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // 1. If Add-on with slash variants: multi-variant quantity steppers
+                            if (isAddon && hasNameVariants) ...[
+                              Text(
+                                'CHOOSE EXTRAS & QUANTITIES',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.1,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...nameVariants.map((variant) {
+                                final qty = variantQuantities[variant] ?? 0;
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+                                  decoration: BoxDecoration(
+                                    color: qty > 0
+                                        ? itemColor.withAlpha(25)
+                                        : Theme.of(context).colorScheme.surfaceContainerHighest,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: qty > 0 ? itemColor : Theme.of(context).colorScheme.outlineVariant,
+                                      width: qty > 0 ? 2 : 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              variant,
+                                              style: TextStyle(
+                                                fontWeight: qty > 0 ? FontWeight.bold : FontWeight.w600,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                            Text(
+                                              '+₹${item.price.toStringAsFixed(0)} each',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      // Quantity Stepper: [-] [qty] [+]
+                                      Container(
+                                        decoration: BoxDecoration(
+                                          color: Theme.of(context).colorScheme.surface,
+                                          borderRadius: BorderRadius.circular(8),
+                                          border: Border.all(
+                                            color: Theme.of(context).colorScheme.outlineVariant,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            IconButton(
+                                              icon: const Icon(Icons.remove, size: 16),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                              onPressed: qty > 0
+                                                  ? () {
+                                                      setModalState(() {
+                                                        variantQuantities[variant] = qty - 1;
+                                                      });
+                                                      HapticFeedback.selectionClick();
+                                                    }
+                                                  : null,
+                                            ),
+                                            Padding(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6),
+                                              child: Text(
+                                                '$qty',
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                  color: qty > 0 ? itemColor : null,
+                                                ),
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.add, size: 16),
+                                              padding: EdgeInsets.zero,
+                                              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                                              onPressed: () {
+                                                setModalState(() {
+                                                  variantQuantities[variant] = qty + 1;
+                                                });
+                                                HapticFeedback.selectionClick();
+                                              },
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                              const SizedBox(height: 14),
+                            ],
+
+                            // 2. If Add-on without slash: single quantity stepper
+                            if (isAddon && !hasNameVariants) ...[
+                              Text(
+                                'SELECT QUANTITY',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.1,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+                                decoration: BoxDecoration(
+                                  color: itemColor.withAlpha(20),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: itemColor, width: 1.5),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            item.name,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                          Text(
+                                            '+₹${item.price.toStringAsFixed(0)} each',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Container(
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).colorScheme.surface,
+                                        borderRadius: BorderRadius.circular(8),
+                                        border: Border.all(
+                                          color: Theme.of(context).colorScheme.outlineVariant,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.remove, size: 16),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                            onPressed: singleAddonQty > 1
+                                                ? () {
+                                                    setModalState(() {
+                                                      singleAddonQty--;
+                                                    });
+                                                    HapticFeedback.selectionClick();
+                                                  }
+                                                : null,
+                                          ),
+                                          Padding(
+                                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                                            child: Text(
+                                              '$singleAddonQty',
+                                              style: TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 16,
+                                                color: itemColor,
+                                              ),
+                                            ),
+                                          ),
+                                          IconButton(
+                                            icon: const Icon(Icons.add, size: 16),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+                                            onPressed: () {
+                                              setModalState(() {
+                                                singleAddonQty++;
+                                              });
+                                              HapticFeedback.selectionClick();
+                                            },
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 14),
+                            ],
+
+                            // 3. Link to Base Item section (for Add-ons)
+                            if (isAddon && baseItems.isNotEmpty) ...[
+                              Text(
+                                baseItems.length > 1 ? 'LINK TO MAIN ITEM' : 'TARGET MAIN ITEM',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.1,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...baseItems.map((baseItem) {
+                                final isSelected = target?.id == baseItem.id;
+                                final inCartCount = _cart[baseItem.id] ?? 1;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: InkWell(
+                                    onTap: () {
+                                      setModalState(() {
+                                        selectedBaseItem = baseItem;
+                                      });
+                                      HapticFeedback.selectionClick();
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Ink(
+                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? itemColor.withAlpha(25)
+                                            : Theme.of(context).colorScheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isSelected ? itemColor : Theme.of(context).colorScheme.outlineVariant,
+                                          width: isSelected ? 2 : 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                                            color: isSelected ? itemColor : Theme.of(context).colorScheme.outline,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  baseItem.displayName,
+                                                  style: TextStyle(
+                                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                                    fontSize: 15,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  '$inCartCount in cart • ₹${baseItem.price.toStringAsFixed(0)} each',
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+
+                            // 4. Regular item with category variants ONLY (e.g. category 'Rice / Noodles', name 'Fried Rice')
+                            if (!isAddon && hasCategoryVariants && !hasNameVariants) ...[
+                              Text(
+                                'SELECT CATEGORY',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.1,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...categoryVariants.map((cat) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: InkWell(
+                                    key: ValueKey('cat_choice_$cat'),
+                                    onTap: () {
+                                      Navigator.pop(sheetContext);
+                                      HapticFeedback.selectionClick();
+                                      _controller.addCustomizedItemToCart(
+                                        baseItem: item,
+                                        resolvedCategory: cat,
+                                      );
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Ink(
+                                      padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: itemColor.withAlpha(60),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.restaurant_menu,
+                                            color: itemColor,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              cat,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 16,
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            '₹${item.price.toStringAsFixed(0)}',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                              color: itemColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+
+                            // 5. Regular item with name variants ONLY (e.g. Fried Rice / Hakka Noodles with single category)
+                            if (!isAddon && hasNameVariants && !hasCategoryVariants) ...[
+                              Text(
+                                'SELECT ITEM OPTION',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.1,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...nameVariants.map((variant) {
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: InkWell(
+                                    key: ValueKey('name_choice_$variant'),
+                                    onTap: () {
+                                      Navigator.pop(sheetContext);
+                                      HapticFeedback.selectionClick();
+                                      _controller.addCustomizedItemToCart(
+                                        baseItem: item,
+                                        resolvedName: variant,
+                                      );
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Ink(
+                                      padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 16),
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: itemColor.withAlpha(60),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            Icons.radio_button_off,
+                                            color: itemColor,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              variant,
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w600,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                          ),
+                                          Text(
+                                            '₹${item.price.toStringAsFixed(0)}',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                              color: itemColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+
+                            // 6. Regular item with BOTH name and category variants
+                            if (!isAddon && hasNameVariants && hasCategoryVariants) ...[
+                              Text(
+                                'SELECT ITEM OPTION',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.1,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...nameVariants.map((variant) {
+                                final isSelected = selectedName == variant;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: InkWell(
+                                    key: ValueKey('both_name_$variant'),
+                                    onTap: () {
+                                      setModalState(() {
+                                        selectedName = variant;
+                                      });
+                                      HapticFeedback.selectionClick();
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Ink(
+                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? itemColor.withAlpha(25)
+                                            : Theme.of(context).colorScheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isSelected ? itemColor : itemColor.withAlpha(60),
+                                          width: isSelected ? 2 : 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                                            color: isSelected ? itemColor : Theme.of(context).colorScheme.outline,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              variant,
+                                              style: TextStyle(
+                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                              const SizedBox(height: 14),
+                              Text(
+                                'SELECT CATEGORY',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: 1.1,
+                                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ...categoryVariants.map((cat) {
+                                final isSelected = selectedCategory == cat;
+                                return Padding(
+                                  padding: const EdgeInsets.only(bottom: 8),
+                                  child: InkWell(
+                                    key: ValueKey('both_cat_$cat'),
+                                    onTap: () {
+                                      setModalState(() {
+                                        selectedCategory = cat;
+                                      });
+                                      HapticFeedback.selectionClick();
+                                    },
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Ink(
+                                      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? itemColor.withAlpha(25)
+                                            : Theme.of(context).colorScheme.surfaceContainerHighest,
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: Border.all(
+                                          color: isSelected ? itemColor : itemColor.withAlpha(60),
+                                          width: isSelected ? 2 : 1,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isSelected ? Icons.radio_button_checked : Icons.radio_button_off,
+                                            color: isSelected ? itemColor : Theme.of(context).colorScheme.outline,
+                                            size: 20,
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              cat,
+                                              style: TextStyle(
+                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Confirmation button for regular items with both name & category variants
+                    if (!isAddon && hasNameVariants && hasCategoryVariants) ...[
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        key: const ValueKey('confirm_add_both_variants'),
+                        onPressed: () {
+                          Navigator.pop(sheetContext);
+                          HapticFeedback.selectionClick();
+                          _controller.addCustomizedItemToCart(
+                            baseItem: item,
+                            resolvedName: selectedName,
+                            resolvedCategory: selectedCategory,
+                          );
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: itemColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          'Add $selectedName ($selectedCategory) • ₹${item.price.toStringAsFixed(0)}',
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                      ),
+                    ],
+
+                    // Confirmation button for Add-ons
+                    if (isAddon) ...[
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: totalAddonCount > 0 && target != null
+                            ? () {
+                                Navigator.pop(sheetContext);
+                                HapticFeedback.selectionClick();
+                                if (hasNameVariants) {
+                                  final listToAdd = <({MenuItem addon, String? resolvedName, int quantity})>[];
+                                  variantQuantities.forEach((v, q) {
+                                    if (q > 0) {
+                                      listToAdd.add((addon: item, resolvedName: v, quantity: q));
+                                    }
+                                  });
+                                  _controller.addMultipleAddonsToCart(
+                                    targetCartItemId: target.id,
+                                    addons: listToAdd,
+                                  );
+                                } else {
+                                  _controller.addAddonToCart(
+                                    targetCartItemId: target.id,
+                                    addon: item,
+                                    quantity: singleAddonQty,
+                                  );
+                                }
+                                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Added $addonSummaryStr to ${target.displayName}'),
+                                    duration: const Duration(seconds: 1),
+                                    behavior: SnackBarBehavior.floating,
+                                  ),
+                                );
+                              }
+                            : null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: itemColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Text(
+                          target != null
+                              ? 'Add $addonSummaryStr to ${target.displayName} • +₹${totalAddonPrice.toStringAsFixed(0)}'
+                              : 'Select a main item',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   void _removeFromCart(String itemId) {
     _controller.removeFromCart(itemId);
   }
@@ -166,10 +969,7 @@ class _StallPosScreenState extends State<StallPosScreen>
         return StatefulBuilder(
           builder: (context, setSheetState) {
             final cartEntries = _cart.entries.map((e) {
-              final item = _menu.firstWhere(
-                (m) => m.id == e.key,
-                orElse: () => MenuItem(id: e.key, name: 'Item', price: 0),
-              );
+              final item = _controller.findItem(e.key);
               return (item: item, quantity: e.value);
             }).toList();
 
@@ -315,48 +1115,12 @@ class _StallPosScreenState extends State<StallPosScreen>
                                     crossAxisAlignment:
                                         CrossAxisAlignment.start,
                                     children: [
-                                      Row(
-                                        children: [
-                                          Flexible(
-                                            child: Text(
-                                              item.name,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.bold,
-                                                fontSize: 15,
-                                              ),
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          if (item.category
-                                              .trim()
-                                              .isNotEmpty) ...[
-                                            const SizedBox(width: 6),
-                                            Container(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 6,
-                                                    vertical: 2,
-                                                  ),
-                                              decoration: BoxDecoration(
-                                                color: catColor.withAlpha(30),
-                                                borderRadius:
-                                                    BorderRadius.circular(6),
-                                                border: Border.all(
-                                                  color: catColor.withAlpha(90),
-                                                  width: 1,
-                                                ),
-                                              ),
-                                              child: Text(
-                                                '(${item.category})',
-                                                style: TextStyle(
-                                                  fontSize: 11,
-                                                  fontWeight: FontWeight.bold,
-                                                  color: catColor,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ],
+                                      Text(
+                                        item.displayName,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15,
+                                        ),
                                       ),
                                       const SizedBox(height: 3),
                                       Text(
@@ -368,6 +1132,45 @@ class _StallPosScreenState extends State<StallPosScreen>
                                           ).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
+                                      if (_controller.menu.any((m) => m.effectiveIsAddon)) ...[
+                                        const SizedBox(height: 4),
+                                        InkWell(
+                                          onTap: () {
+                                            _showAddonsForCartItemModal(item.id, () => setSheetState(() {}));
+                                          },
+                                          borderRadius: BorderRadius.circular(6),
+                                          child: Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: Theme.of(context).colorScheme.primaryContainer.withAlpha(90),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(
+                                                color: Theme.of(context).colorScheme.primary.withAlpha(100),
+                                                width: 0.8,
+                                              ),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Icon(
+                                                  Icons.add_circle_outline,
+                                                  size: 13,
+                                                  color: Theme.of(context).colorScheme.primary,
+                                                ),
+                                                const SizedBox(width: 4),
+                                                Text(
+                                                  '+ Extras / Add-on',
+                                                  style: TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.bold,
+                                                    color: Theme.of(context).colorScheme.primary,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ],
                                     ],
                                   ),
                                 ),
@@ -428,7 +1231,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                                           minHeight: 32,
                                         ),
                                         onPressed: () {
-                                          _addToCart(item);
+                                          _controller.incrementCartItem(item.id);
                                           setSheetState(() {});
                                         },
                                       ),
@@ -532,6 +1335,289 @@ class _StallPosScreenState extends State<StallPosScreen>
           },
         );
       },
+    );
+  }
+
+  void _showAddonsForCartItemModal(String cartItemId, [VoidCallback? onUpdated]) {
+    final cartItem = _controller.findItem(cartItemId);
+    final availableAddons =
+        _controller.menu.where((m) => m.effectiveIsAddon).toList();
+    if (availableAddons.isEmpty) return;
+
+    final Map<String, int> selectedQuantities = {};
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setModalState) {
+            double totalAdded = 0.0;
+            int totalCount = 0;
+            final parts = <String>[];
+
+            for (final addon in availableAddons) {
+              if (addon.hasSlashNameVariants) {
+                for (final v in addon.slashNameVariants) {
+                  final key = '${addon.id}_var_$v';
+                  final qty = selectedQuantities[key] ?? 0;
+                  if (qty > 0) {
+                    totalCount += qty;
+                    totalAdded += qty * addon.price;
+                    parts.add(qty > 1 ? '${qty}x $v' : v);
+                  }
+                }
+              } else {
+                final qty = selectedQuantities[addon.id] ?? 0;
+                if (qty > 0) {
+                  totalCount += qty;
+                  totalAdded += qty * addon.price;
+                  parts.add(qty > 1 ? '${qty}x ${addon.name}' : addon.name);
+                }
+              }
+            }
+
+            return Container(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.8,
+              ),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+              child: SafeArea(
+                top: false,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Center(
+                      child: Container(
+                        width: 44,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.outlineVariant,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      'Add Extras / Add-ons',
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                            fontWeight: FontWeight.bold,
+                          ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'For: ${cartItem.displayName}',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    Flexible(
+                      child: ListView(
+                        shrinkWrap: true,
+                        children: [
+                          for (final addon in availableAddons) ...[
+                            if (addon.hasSlashNameVariants)
+                              for (final v in addon.slashNameVariants) ...[
+                                _buildAddonQuantityRow(
+                                  title: v,
+                                  price: addon.price,
+                                  qty: selectedQuantities['${addon.id}_var_$v'] ?? 0,
+                                  onChanged: (q) {
+                                    setModalState(() {
+                                      selectedQuantities['${addon.id}_var_$v'] = q;
+                                    });
+                                  },
+                                ),
+                              ]
+                            else ...[
+                              _buildAddonQuantityRow(
+                                title: addon.name,
+                                price: addon.price,
+                                qty: selectedQuantities[addon.id] ?? 0,
+                                onChanged: (q) {
+                                  setModalState(() {
+                                    selectedQuantities[addon.id] = q;
+                                  });
+                                },
+                              ),
+                            ],
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    FilledButton(
+                      onPressed: totalCount > 0
+                          ? () {
+                              Navigator.pop(ctx);
+                              HapticFeedback.selectionClick();
+                              final listToAdd = <
+                                  ({
+                                    MenuItem addon,
+                                    String? resolvedName,
+                                    int quantity
+                                  })>[];
+                              for (final addon in availableAddons) {
+                                if (addon.hasSlashNameVariants) {
+                                  for (final v in addon.slashNameVariants) {
+                                    final q = selectedQuantities[
+                                            '${addon.id}_var_$v'] ??
+                                        0;
+                                    if (q > 0) {
+                                      listToAdd.add((
+                                        addon: addon,
+                                        resolvedName: v,
+                                        quantity: q
+                                      ));
+                                    }
+                                  }
+                                } else {
+                                  final q = selectedQuantities[addon.id] ?? 0;
+                                  if (q > 0) {
+                                    listToAdd.add((
+                                      addon: addon,
+                                      resolvedName: null,
+                                      quantity: q
+                                    ));
+                                  }
+                                }
+                              }
+                              _controller.addMultipleAddonsToCart(
+                                targetCartItemId: cartItemId,
+                                addons: listToAdd,
+                              );
+                              onUpdated?.call();
+                              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                      'Added ${parts.map((p) => '[$p]').join(' ')} to ${cartItem.displayName}'),
+                                  duration: const Duration(seconds: 1),
+                                  behavior: SnackBarBehavior.floating,
+                                ),
+                              );
+                            }
+                          : null,
+                      style: FilledButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        totalCount > 0
+                            ? 'Add ${parts.map((p) => '[$p]').join(' ')} • +₹${totalAdded.toStringAsFixed(0)}'
+                            : 'Select extras to add',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildAddonQuantityRow({
+    required String title,
+    required double price,
+    required int qty,
+    required ValueChanged<int> onChanged,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 14),
+      decoration: BoxDecoration(
+        color: qty > 0
+            ? Theme.of(context).colorScheme.primaryContainer.withAlpha(50)
+            : Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: qty > 0
+              ? Theme.of(context).colorScheme.primary
+              : Theme.of(context).colorScheme.outlineVariant,
+          width: qty > 0 ? 1.5 : 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: TextStyle(
+                    fontWeight: qty > 0 ? FontWeight.bold : FontWeight.w600,
+                    fontSize: 15,
+                  ),
+                ),
+                Text(
+                  '+₹${price.toStringAsFixed(0)} each',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.surface,
+              borderRadius: BorderRadius.circular(8),
+              border:
+                  Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: qty > 0 ? () => onChanged(qty - 1) : null,
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6),
+                  child: Text(
+                    '$qty',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color:
+                          qty > 0 ? Theme.of(context).colorScheme.primary : null,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add, size: 16),
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: () => onChanged(qty + 1),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -670,6 +1756,7 @@ class _StallPosScreenState extends State<StallPosScreen>
             : 'General');
     final categoryCtrl = TextEditingController(text: selectedCat);
     int? selectedColorHex = existingItem?.colorHex;
+    bool isAddon = existingItem?.isAddon ?? false;
 
     final existingCategories = _categories.where((c) => c != 'All').toList();
     if (!existingCategories.contains('General')) {
@@ -715,7 +1802,25 @@ class _StallPosScreenState extends State<StallPosScreen>
                       prefixText: '₹ ',
                     ),
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text(
+                      'Mark as Add-on',
+                      style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    subtitle: const Text(
+                      'Must be linked to another item; cannot be added alone',
+                      style: TextStyle(fontSize: 11),
+                    ),
+                    value: isAddon,
+                    onChanged: (val) {
+                      setDialogState(() {
+                        isAddon = val;
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 12),
                   const Text(
                     'Category',
                     style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
@@ -897,6 +2002,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                           price: price,
                           category: category,
                           colorHex: resolvedColor,
+                          isAddon: isAddon,
                         ),
                       );
                     } else {
@@ -907,6 +2013,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                           price: price,
                           category: category,
                           colorHex: resolvedColor,
+                          isAddon: isAddon,
                         ),
                       );
                     }
@@ -934,7 +2041,7 @@ class _StallPosScreenState extends State<StallPosScreen>
           children: [
             ListTile(
               title: Text(
-                item.name,
+                item.displayName,
                 style: const TextStyle(
                   fontWeight: FontWeight.bold,
                   fontSize: 18,
@@ -993,7 +2100,7 @@ class _StallPosScreenState extends State<StallPosScreen>
       builder: (ctx) => AlertDialog(
         title: const Text('Delete Menu Item?'),
         content: Text(
-          'Are you sure you want to delete "${item.name}" from the menu?',
+          'Are you sure you want to delete "${item.displayName}" from the menu?',
         ),
         actions: [
           TextButton(
@@ -1217,14 +2324,20 @@ class _StallPosScreenState extends State<StallPosScreen>
   // ---------------------------------------------------------------------------
 
   Widget _buildMenuItemCard(MenuItem item) {
-    final inCartQty = _cart[item.id] ?? 0;
+    final inCartQty = _cart.entries.where((entry) {
+      final key = entry.key;
+      return key == item.id ||
+          key.startsWith('${item.id}_var_') ||
+          key.startsWith('${item.id}_cat_') ||
+          key.startsWith('${item.id}+');
+    }).fold(0, (sum, entry) => sum + entry.value);
     final itemColor = item.colorHex != null
         ? Color(item.colorHex!)
         : _getCategoryColor(item.category);
 
     return InkWell(
       key: ValueKey(item.id),
-      onTap: () => _addToCart(item),
+      onTap: () => _handleMenuItemTap(item),
       onLongPress: () => _showItemOptionsBottomSheet(item),
       borderRadius: BorderRadius.circular(14),
       child: Ink(
@@ -1255,19 +2368,65 @@ class _StallPosScreenState extends State<StallPosScreen>
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Center(
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                  if (item.effectiveIsAddon)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade700.withAlpha(40),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: Colors.amber.shade700,
+                          width: 1,
+                        ),
+                      ),
+                      child: Text(
+                        '+ Add-on',
+                        style: TextStyle(
+                          color: Colors.amber.shade900,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
+                      ),
+                    )
+                  else if (item.hasAnySlashVariants)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 4),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 7,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: itemColor.withAlpha(35),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: itemColor, width: 1),
+                      ),
+                      child: Text(
+                        'Options',
+                        style: TextStyle(
+                          color: itemColor,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 10,
+                        ),
+                      ),
+                    ),
                   Text(
-                    '${item.name} (${item.category})',
+                    item.displayName,
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 5),
                   Text(
@@ -1305,10 +2464,12 @@ class _StallPosScreenState extends State<StallPosScreen>
                 ],
               ),
             ),
-          ],
+          ),
         ),
-      ),
-    );
+      ],
+    ),
+  ),
+);
   }
 
   Widget _buildTakeOrderPanel() {
@@ -1662,23 +2823,10 @@ class _StallPosScreenState extends State<StallPosScreen>
                                 Text(
                                   _cart.entries
                                       .map((e) {
-                                        final item = _menu.firstWhere(
-                                          (m) => m.id == e.key,
-                                          orElse: () => MenuItem(
-                                            id: e.key,
-                                            name: 'Item',
-                                            price: 0,
-                                          ),
-                                        );
-                                        final catSuffix =
-                                            item.category.trim().isNotEmpty
-                                            ? ' (${item.category})'
-                                            : '';
-                                        return '${e.value}x ${item.name}$catSuffix';
+                                        final item = _controller.findItem(e.key);
+                                        return '${e.value}x ${item.displayName}';
                                       })
                                       .join(', '),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: Theme.of(
@@ -2028,7 +3176,7 @@ class _StallPosScreenState extends State<StallPosScreen>
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            'Paid • ${order.paymentMethod ?? 'Cash'}',
+                            'Paid • ${order.paymentMethod ?? 'UPI'}',
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w700,
@@ -2084,12 +3232,10 @@ class _StallPosScreenState extends State<StallPosScreen>
                 ),
                 child: Column(
                   children: itemsWithCategory.map((item) {
-                    final catColor = item.colorHex != null
-                        ? Color(item.colorHex!)
-                        : _getCategoryColor(item.category);
                     return Padding(
                       padding: const EdgeInsets.symmetric(vertical: 4),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Quantity Badge
                           Container(
@@ -2116,44 +3262,14 @@ class _StallPosScreenState extends State<StallPosScreen>
                           ),
                           const SizedBox(width: 8),
 
-                          // Item Name & Category next to each other
+                          // Item Name & Category in brackets
                           Expanded(
-                            child: Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    item.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 7,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: catColor.withAlpha(35),
-                                    borderRadius: BorderRadius.circular(8),
-                                    border: Border.all(
-                                      color: catColor.withAlpha(120),
-                                      width: 1,
-                                    ),
-                                  ),
-                                  child: Text(
-                                    item.category,
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                      color: catColor,
-                                    ),
-                                  ),
-                                ),
-                              ],
+                            child: Text(
+                              item.displayName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 14,
+                              ),
                             ),
                           ),
                         ],
@@ -2339,39 +3455,12 @@ class _StallPosScreenState extends State<StallPosScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              item.itemName,
-                              style: const TextStyle(
-                                fontSize: 17,
-                                fontWeight: FontWeight.bold,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: color.withAlpha(25),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: color.withAlpha(70)),
-                            ),
-                            child: Text(
-                              item.category,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: color,
-                              ),
-                            ),
-                          ),
-                        ],
+                      Text(
+                        item.displayName,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       const SizedBox(height: 8),
 

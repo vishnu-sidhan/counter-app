@@ -70,7 +70,7 @@ class CsvExportService {
           ? order.completedAt!.toIso8601String()
           : '';
       final safeCustomer = '"${order.displayCustomerName.replaceAll('"', '""')}"';
-      final safePayment = '"${(order.paymentMethod ?? 'Cash').replaceAll('"', '""')}"';
+      final safePayment = '"${(order.paymentMethod ?? 'UPI').replaceAll('"', '""')}"';
 
       buffer.writeln(
         '#${order.token},'

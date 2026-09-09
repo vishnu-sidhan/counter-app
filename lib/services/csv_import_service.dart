@@ -104,6 +104,7 @@ Budget Delta,0,10,,true,0xFFDC2626''';
     int priceIdx = 1;
     int categoryIdx = 2;
     int colorIdx = -1;
+    int addonIdx = -1;
     int startIndex = 0;
 
     final firstRow = rows.first.map((c) => c.toString().trim().toLowerCase()).toList();
@@ -121,6 +122,8 @@ Budget Delta,0,10,,true,0xFFDC2626''';
           categoryIdx = i;
         } else if (col == 'color' || col == 'colorhex' || col == 'color_hex' || col == 'colour') {
           colorIdx = i;
+        } else if (col == 'is_addon' || col == 'addon' || col == 'isaddon' || col == 'add_on') {
+          addonIdx = i;
         }
       }
     } else {
@@ -145,6 +148,7 @@ Budget Delta,0,10,,true,0xFFDC2626''';
       final rawPrice = priceIdx < row.length ? row[priceIdx].toString().trim() : '';
       var category = categoryIdx < row.length ? row[categoryIdx].toString().trim() : '';
       final rawColor = colorIdx != -1 && colorIdx < row.length ? row[colorIdx].toString().trim() : '';
+      final rawAddon = addonIdx != -1 && addonIdx < row.length ? row[addonIdx].toString().trim().toLowerCase() : '';
 
       if (name.isEmpty) {
         skippedCount++;
@@ -165,6 +169,12 @@ Budget Delta,0,10,,true,0xFFDC2626''';
       if (category.isEmpty) {
         category = 'General';
       }
+
+      final isAddonExplicit = rawAddon == 'true' || rawAddon == '1' || rawAddon == 'yes';
+      final isAddon = isAddonExplicit ||
+          category.toLowerCase().contains('addon') ||
+          category.toLowerCase().contains('add-on') ||
+          category.toLowerCase() == 'extras';
 
       // Determine category color: if color is defined, use it; if not defined, assign a guaranteed unique, visually distinct color!
       final parsedColor = CategoryColorHelper.parseColor(rawColor);
@@ -192,6 +202,7 @@ Budget Delta,0,10,,true,0xFFDC2626''';
         price: price,
         category: category,
         colorHex: assignedColor,
+        isAddon: isAddon,
       ));
     }
 
@@ -214,7 +225,10 @@ Budget Delta,0,10,,true,0xFFDC2626''';
         c == 'category' ||
         c == 'color' ||
         c == 'colorhex' ||
-        c == 'color_hex');
+        c == 'color_hex' ||
+        c == 'is_addon' ||
+        c == 'addon' ||
+        c == 'add_on');
   }
 
   /// Parses CSV text content into a list of [CounterModel]s.
