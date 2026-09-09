@@ -250,5 +250,84 @@ void main() {
       await controller.clearAllLogs();
       expect(controller.logs, isEmpty);
     });
+
+    test('supports tagging and filtering counters by tag', () async {
+      await controller.addCounter(
+        title: 'Pushups',
+        colorHex: 0xFF2563EB,
+        tag: 'fitness',
+      );
+      await controller.addCounter(
+        title: 'Running',
+        colorHex: 0xFF059669,
+        tag: 'fitness',
+      );
+      await controller.addCounter(
+        title: 'Code Commits',
+        colorHex: 0xFFD97706,
+        tag: 'work',
+      );
+      final untagged = await controller.addCounter(
+        title: 'Random Habit',
+        colorHex: 0xFF9333EA,
+      );
+
+      expect(controller.allTags, containsAll(['fitness', 'work']));
+      expect(controller.allTags.length, 2);
+      expect(controller.filteredCounters.length, 4);
+
+      // Filter by fitness
+      controller.setSelectedTag('fitness');
+      expect(controller.selectedTag, 'fitness');
+      expect(controller.filteredCounters.length, 2);
+      expect(controller.filteredCounters.every((c) => c.tag == 'fitness'), isTrue);
+
+      // Filter by work
+      controller.setSelectedTag('work');
+      expect(controller.filteredCounters.length, 1);
+      expect(controller.filteredCounters.first.title, 'Code Commits');
+
+      // Clear tag filter
+      controller.setSelectedTag(null);
+      expect(controller.selectedTag, isNull);
+      expect(controller.filteredCounters.length, 4);
+
+      // Update untagged counter with a tag
+      await controller.updateCounter(
+        id: untagged.id,
+        title: untagged.title,
+        step: untagged.step,
+        colorHex: untagged.colorHex,
+        allowNegative: untagged.allowNegative,
+        tag: 'habits',
+      );
+      expect(controller.allTags, contains('habits'));
+
+      // Clear tag on untagged counter
+      await controller.updateCounter(
+        id: untagged.id,
+        title: untagged.title,
+        step: untagged.step,
+        colorHex: untagged.colorHex,
+        allowNegative: untagged.allowNegative,
+        clearTag: true,
+      );
+      expect(controller.filteredCounters.firstWhere((c) => c.id == untagged.id).tag, isNull);
+    });
+
+    test('reorders counters and activates SortOption.custom', () async {
+      final c1 = await controller.addCounter(title: 'Item 1', colorHex: 0xFF2563EB);
+      final c2 = await controller.addCounter(title: 'Item 2', colorHex: 0xFF059669);
+      final c3 = await controller.addCounter(title: 'Item 3', colorHex: 0xFFD97706);
+
+      controller.setSortOption(SortOption.custom);
+      // Since addCounter prepends: initial order is Item 3, Item 2, Item 1
+      expect(controller.filteredCounters.map((c) => c.id).toList(), [c3.id, c2.id, c1.id]);
+
+      // Move c3 from index 0 to after index 2
+      controller.reorderCounters(0, 3);
+      expect(controller.sortOption, SortOption.custom);
+      expect(controller.filteredCounters.map((c) => c.id).toList(), [c2.id, c1.id, c3.id]);
+    });
   });
 }

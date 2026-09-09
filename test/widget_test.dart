@@ -33,6 +33,7 @@ void main() {
     await tester.pumpAndSettle();
 
     // Tap submit button
+    await tester.ensureVisible(find.text('Create Counter'));
     await tester.tap(find.text('Create Counter'));
     await tester.pumpAndSettle();
 

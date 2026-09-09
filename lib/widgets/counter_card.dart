@@ -120,6 +120,30 @@ class CounterCard extends StatelessWidget {
                                 ),
                               ),
                             ),
+                            if (counter.tag != null && counter.tag!.trim().isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 7,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: theme.colorScheme.surfaceContainerHighest,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: theme.colorScheme.outlineVariant.withAlpha(120),
+                                  ),
+                                ),
+                                child: Text(
+                                  '#${counter.tag!.trim()}',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: theme.colorScheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ),
+                            ],
                             const SizedBox(width: 8),
                             // Updated time
                             Text(
@@ -352,13 +376,13 @@ class CounterCard extends StatelessWidget {
               Row(
                 children: [
                   Icon(
-                    isReached ? Icons.check_circle : Icons.flag_outlined,
+                    isReached ? Icons.celebration_rounded : Icons.flag_outlined,
                     size: 16,
                     color: isReached ? const Color(0xFF16A34A) : _accentColor,
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    isReached ? 'Goal Achieved!' : 'Target: $target',
+                    isReached ? '🎉 Goal Achieved ($target)!' : 'Target: $target',
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w700,

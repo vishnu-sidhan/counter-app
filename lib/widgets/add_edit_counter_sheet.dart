@@ -13,6 +13,7 @@ class AddEditCounterSheet extends StatefulWidget {
     required int colorHex,
     int? target,
     required bool allowNegative,
+    String? tag,
   }) onSave;
 
   const AddEditCounterSheet({
@@ -31,6 +32,7 @@ class AddEditCounterSheet extends StatefulWidget {
       required int colorHex,
       int? target,
       required bool allowNegative,
+      String? tag,
     }) onSave,
   }) {
     return showModalBottomSheet(
@@ -52,6 +54,7 @@ class AddEditCounterSheet extends StatefulWidget {
 class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _titleController;
+  late final TextEditingController _tagController;
   late final TextEditingController _countController;
   late final TextEditingController _stepController;
   late final TextEditingController _targetController;
@@ -67,6 +70,7 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
     super.initState();
     final edit = widget.counterToEdit;
     _titleController = TextEditingController(text: edit?.title ?? '');
+    _tagController = TextEditingController(text: edit?.tag ?? '');
     _countController = TextEditingController(text: (edit?.count ?? 0).toString());
     _stepValue = edit?.step ?? 1;
     _stepController = TextEditingController(text: _stepValue.toString());
@@ -80,6 +84,7 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
   @override
   void dispose() {
     _titleController.dispose();
+    _tagController.dispose();
     _countController.dispose();
     _stepController.dispose();
     _targetController.dispose();
@@ -97,6 +102,7 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
     if (!_formKey.currentState!.validate()) return;
 
     final title = _titleController.text.trim();
+    final tagText = _tagController.text.trim();
     final count = int.tryParse(_countController.text.trim()) ?? 0;
     final step = int.tryParse(_stepController.text.trim()) ?? 1;
     final targetText = _targetController.text.trim();
@@ -109,6 +115,7 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
       colorHex: _selectedColorHex,
       target: (target != null && target > 0) ? target : null,
       allowNegative: _allowNegative,
+      tag: tagText.isNotEmpty ? tagText : null,
     );
 
     Navigator.of(context).pop();
@@ -184,6 +191,18 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
               ),
               const SizedBox(height: 16),
 
+              // Category / Tag Field
+              TextFormField(
+                controller: _tagController,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Category / Tag (Optional)',
+                  hintText: 'e.g. Fitness, Work, Habits, Daily',
+                  prefixIcon: Icon(Icons.tag_rounded),
+                ),
+              ),
+              const SizedBox(height: 16),
+
               // Starting / Current Count & Step row
               Row(
                 children: [
@@ -191,21 +210,19 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
                   Expanded(
                     child: TextFormField(
                       controller: _countController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        signed: true,
-                        decimal: false,
-                      ),
+                      keyboardType: TextInputType.number,
                       inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^-?\d*')),
+                        FilteringTextInputFormatter.digitsOnly,
                       ],
                       decoration: InputDecoration(
-                        labelText: isEditing ? 'Current Count' : 'Initial Count',
-                        prefixIcon: const Icon(Icons.numbers),
+                        labelText: isEditing ? 'Current Count' : 'Starting Count',
+                        prefixIcon: const Icon(Icons.pin_outlined),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  // Step
+                  const SizedBox(width: 14),
+
+                  // Step size
                   Expanded(
                     child: TextFormField(
                       controller: _stepController,
@@ -214,8 +231,8 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
                         FilteringTextInputFormatter.digitsOnly,
                       ],
                       decoration: const InputDecoration(
-                        labelText: 'Step Size (±)',
-                        prefixIcon: Icon(Icons.exposure_plus_1),
+                        labelText: 'Step Value',
+                        prefixIcon: Icon(Icons.exposure_plus_1_outlined),
                       ),
                       onChanged: (val) {
                         final parsed = int.tryParse(val);
@@ -227,25 +244,32 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
 
-              // Step Preset Chips
+              // Quick Step Presets Chips
               Wrap(
                 spacing: 8,
-                children: _presetSteps.map((s) {
-                  final isSelected = _stepValue == s;
-                  return ChoiceChip(
-                    label: Text('±$s'),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected) _onStepPresetSelected(s);
-                    },
-                  );
-                }).toList(),
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    'Presets:',
+                    style: theme.textTheme.labelMedium?.copyWith(
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  ..._presetSteps.map((step) {
+                    final isSelected = _stepValue == step;
+                    return ChoiceChip(
+                      label: Text('±$step'),
+                      selected: isSelected,
+                      onSelected: (_) => _onStepPresetSelected(step),
+                    );
+                  }),
+                ],
               ),
               const SizedBox(height: 16),
 
-              // Target / Goal Field (Optional)
+              // Target Goal Field
               TextFormField(
                 controller: _targetController,
                 keyboardType: TextInputType.number,

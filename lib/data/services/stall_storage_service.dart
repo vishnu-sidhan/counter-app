@@ -106,10 +106,80 @@ class StallStorageService {
     return remaining;
   }
 
+  static const String _archiveKey = 'stall_orders_archive';
+
+  /// Archives completed orders older than [threshold] into a separate archive store,
+  /// Archives completed orders into a separate archive store,
+  /// keeping the active orders list lightweight.
+  /// If [explicitOrders] is provided, archives those specific orders;
+  /// otherwise archives orders completed longer ago than [threshold].
+  Future<int> archiveCompletedOrders({
+    Duration threshold = const Duration(hours: 24),
+    List<StallOrder>? explicitOrders,
+  }) async {
+    final prefs = await _getPrefs();
+    final currentOrders = await loadOrders();
+    final now = DateTime.now();
+
+    final toKeep = <StallOrder>[];
+    final toArchive = <StallOrder>[];
+
+    if (explicitOrders != null) {
+      final explicitTokens = explicitOrders.map((o) => o.token).toSet();
+      for (final order in currentOrders) {
+        if (explicitTokens.contains(order.token)) {
+          toArchive.add(order);
+        } else {
+          toKeep.add(order);
+        }
+      }
+    } else {
+      for (final order in currentOrders) {
+        if (order.isCompleted &&
+            order.completedAt != null &&
+            now.difference(order.completedAt!) > threshold) {
+          toArchive.add(order);
+        } else {
+          toKeep.add(order);
+        }
+      }
+    }
+
+    if (toArchive.isEmpty) return 0;
+
+    final existingArchived = await loadArchivedOrders();
+    final combinedArchive = [...existingArchived, ...toArchive];
+
+    await prefs.setString(
+      _archiveKey,
+      jsonEncode(combinedArchive.map((e) => e.toJson()).toList()),
+    );
+    await saveOrders(toKeep);
+
+    return toArchive.length;
+  }
+
+  /// Loads archived orders from storage.
+  Future<List<StallOrder>> loadArchivedOrders() async {
+    final prefs = await _getPrefs();
+    final raw = prefs.getString(_archiveKey);
+    if (raw == null) return [];
+
+    try {
+      final List decoded = jsonDecode(raw) as List;
+      return decoded
+          .map((e) => StallOrder.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   /// Clears all order history entirely and resets token counter.
   Future<void> clearAllOrders({bool resetToken = false}) async {
     final prefs = await _getPrefs();
     await prefs.remove(_ordersKey);
+    await prefs.remove(_archiveKey);
     if (resetToken) {
       await prefs.setInt(_tokenKey, 1);
     }

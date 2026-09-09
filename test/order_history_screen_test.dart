@@ -24,7 +24,7 @@ void main() {
     ];
 
     final csv = CsvExportService.generateOrdersCsv(orders);
-    expect(csv, contains('Token,Timestamp,Date,Time,Status,Items Summary,Total Amount,Completed At'));
+    expect(csv, contains('Token,Timestamp,Date,Time,Status,Payment Status,Items Summary,Total Amount,Paid Amount,Balance Due,Completed At'));
     expect(csv, contains('#1'));
     expect(csv, contains('Completed'));
     expect(csv, contains('""Special"" Chai'));
@@ -101,4 +101,59 @@ void main() {
     expect(find.text('Completed (0)'), findsOneWidget);
     expect(find.text('Pending (1)'), findsOneWidget);
   });
+
+  testWidgets('OrderHistoryScreen search bar and date range chips filter orders correctly', (WidgetTester tester) async {
+    final storageService = StallStorageService();
+    final now = DateTime.now();
+    final orders = [
+      StallOrder(
+        token: 101,
+        itemsSummary: '2x Masala Dosa',
+        total: 120.0,
+        timestamp: now,
+        customerName: 'Rahul',
+        isCompleted: true,
+      ),
+      StallOrder(
+        token: 102,
+        itemsSummary: '1x Cold Coffee',
+        total: 60.0,
+        timestamp: now.subtract(const Duration(days: 3)),
+        customerName: 'Sneha',
+        isCompleted: false,
+      ),
+    ];
+
+    await storageService.saveOrders(orders);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: OrderHistoryScreen(storageService: storageService),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('#101'), findsOneWidget);
+    expect(find.text('#102'), findsOneWidget);
+
+    // Search for Rahul
+    await tester.enterText(find.byType(TextField), 'Rahul');
+    await tester.pumpAndSettle();
+    expect(find.text('#101'), findsOneWidget);
+    expect(find.text('#102'), findsNothing);
+
+    // Clear search
+    await tester.tap(find.byIcon(Icons.clear));
+    await tester.pumpAndSettle();
+    expect(find.text('#101'), findsOneWidget);
+    expect(find.text('#102'), findsOneWidget);
+
+    // Filter by Today
+    await tester.ensureVisible(find.text('Today'));
+    await tester.tap(find.text('Today'));
+    await tester.pumpAndSettle();
+    expect(find.text('#101'), findsOneWidget);
+    expect(find.text('#102'), findsNothing);
+  });
 }
+

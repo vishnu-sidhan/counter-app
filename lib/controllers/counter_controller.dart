@@ -9,14 +9,15 @@ import '../data/services/counter_storage_service.dart';
 enum SortOption {
   recentlyUpdated('Recently Updated'),
   highestCount('Highest Count'),
-  alphabetical('Alphabetical');
+  alphabetical('Alphabetical'),
+  custom('Custom Order');
 
   final String label;
   const SortOption(this.label);
 }
 
 /// Native state controller for managing multi-counter items,
-/// handling optimistic mutations, search, sort, and background persistence.
+/// handling optimistic mutations, search, sort, tags, custom reordering, and background persistence.
 class CounterController extends ChangeNotifier {
   final CounterStorageService _storageService;
   final Uuid _uuid;
@@ -26,6 +27,7 @@ class CounterController extends ChangeNotifier {
   bool _isLoading = true;
   String _searchQuery = '';
   SortOption _sortOption;
+  String? _selectedTag;
   String? _selectedLogCounterId;
 
   CounterController({
@@ -45,6 +47,9 @@ class CounterController extends ChangeNotifier {
   /// Active sorting criterion.
   SortOption get sortOption => _sortOption;
 
+  /// Active category / tag filter (null displays all counters).
+  String? get selectedTag => _selectedTag;
+
   /// Total count of all items across all counters.
   int get totalCountSum =>
       _counters.fold(0, (sum, counter) => sum + counter.count);
@@ -55,12 +60,29 @@ class CounterController extends ChangeNotifier {
   /// Number of active counters.
   int get totalCountersCount => _counters.length;
 
-  /// Filtered and sorted counters according to search and sort criteria.
+  /// Unique tags extracted across all existing counters.
+  List<String> get allTags {
+    final set = <String>{};
+    for (final c in _counters) {
+      if (c.tag != null && c.tag!.trim().isNotEmpty) {
+        set.add(c.tag!.trim());
+      }
+    }
+    final list = set.toList();
+    list.sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return list;
+  }
+
+  /// Filtered and sorted counters according to search, tag filter, and sort criteria.
   List<CounterModel> get filteredCounters {
     final query = _searchQuery.trim().toLowerCase();
     var list = _counters.where((counter) {
+      if (_selectedTag != null && counter.tag != _selectedTag) {
+        return false;
+      }
       if (query.isEmpty) return true;
-      return counter.title.toLowerCase().contains(query);
+      return counter.title.toLowerCase().contains(query) ||
+          (counter.tag != null && counter.tag!.toLowerCase().contains(query));
     }).toList();
 
     switch (_sortOption) {
@@ -72,6 +94,9 @@ class CounterController extends ChangeNotifier {
         break;
       case SortOption.alphabetical:
         list.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+      case SortOption.custom:
+        list.sort((a, b) => a.orderIndex.compareTo(b.orderIndex));
         break;
     }
 
@@ -100,6 +125,12 @@ class CounterController extends ChangeNotifier {
     try {
       _counters = await _storageService.loadCounters();
       _logs = await _storageService.loadLogs();
+      // Ensure existing counters have sequential orderIndex if unassigned
+      for (int i = 0; i < _counters.length; i++) {
+        if (_counters[i].orderIndex == 0 && i > 0) {
+          _counters[i] = _counters[i].copyWith(orderIndex: i);
+        }
+      }
     } catch (e) {
       debugPrint('Error initializing CounterController: $e');
       _counters = [];
@@ -124,6 +155,54 @@ class CounterController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Filters counters by category / tag (null shows all).
+  void setSelectedTag(String? tag) {
+    if (_selectedTag == tag) return;
+    _selectedTag = tag;
+    notifyListeners();
+  }
+
+  /// Reorders counters manually using drag-and-drop and activates Custom Order sort.
+  void reorderCounters(int oldIndex, int newIndex) {
+    final current = filteredCounters;
+    if (oldIndex < 0 || oldIndex >= current.length) return;
+    if (newIndex < 0 || newIndex > current.length) return;
+
+    if (oldIndex < newIndex) {
+      newIndex -= 1;
+    }
+    final item = current[oldIndex];
+    final originalOldIndex = _counters.indexWhere((c) => c.id == item.id);
+    if (originalOldIndex == -1) return;
+    _counters.removeAt(originalOldIndex);
+
+    if (current.length == _counters.length + 1) {
+      // Unfiltered list
+      _counters.insert(newIndex, item);
+    } else {
+      // Filtered list
+      if (newIndex >= current.length - 1) {
+        final lastFiltered = current.last;
+        final lastIndex = _counters.indexWhere((c) => c.id == lastFiltered.id);
+        final insertIndex = (lastIndex != -1 ? lastIndex + 1 : _counters.length).clamp(0, _counters.length);
+        _counters.insert(insertIndex, item);
+      } else {
+        final target = current[newIndex];
+        final targetIndex = _counters.indexWhere((c) => c.id == target.id);
+        final insertIndex = (targetIndex != -1 ? targetIndex : _counters.length).clamp(0, _counters.length);
+        _counters.insert(insertIndex, item);
+      }
+    }
+
+    for (int i = 0; i < _counters.length; i++) {
+      _counters[i] = _counters[i].copyWith(orderIndex: i);
+    }
+
+    _sortOption = SortOption.custom;
+    notifyListeners();
+    _silentSave();
+  }
+
   /// Adds a new counter and persists to storage.
   Future<CounterModel> addCounter({
     required String title,
@@ -132,8 +211,10 @@ class CounterController extends ChangeNotifier {
     required int colorHex,
     int? target,
     bool allowNegative = false,
+    String? tag,
   }) async {
     final now = DateTime.now();
+    final cleanTag = (tag != null && tag.trim().isNotEmpty) ? tag.trim() : null;
     final newCounter = CounterModel(
       id: _uuid.v4(),
       title: title.trim().isEmpty ? 'Counter ${_counters.length + 1}' : title.trim(),
@@ -142,12 +223,17 @@ class CounterController extends ChangeNotifier {
       colorHex: colorHex,
       target: (target != null && target > 0) ? target : null,
       allowNegative: allowNegative,
+      tag: cleanTag,
+      orderIndex: _counters.length,
       createdAt: now,
       updatedAt: now,
     );
 
     // Insert at beginning for immediate visibility
     _counters.insert(0, newCounter);
+    for (int i = 0; i < _counters.length; i++) {
+      _counters[i] = _counters[i].copyWith(orderIndex: i);
+    }
     notifyListeners();
 
     _silentSave();
@@ -166,6 +252,9 @@ class CounterController extends ChangeNotifier {
     } else {
       _counters.insertAll(0, importedCounters);
     }
+    for (int i = 0; i < _counters.length; i++) {
+      _counters[i] = _counters[i].copyWith(orderIndex: i);
+    }
     notifyListeners();
     _silentSave();
   }
@@ -180,6 +269,8 @@ class CounterController extends ChangeNotifier {
     int? target,
     bool clearTarget = false,
     required bool allowNegative,
+    String? tag,
+    bool clearTag = false,
   }) async {
     final index = _counters.indexWhere((c) => c.id == id);
     if (index == -1) return false;
@@ -187,6 +278,7 @@ class CounterController extends ChangeNotifier {
     final existing = _counters[index];
     final updatedCount = count ?? existing.count;
     final boundedCount = (!allowNegative && updatedCount < 0) ? 0 : updatedCount;
+    final cleanTag = (tag != null && tag.trim().isNotEmpty) ? tag.trim() : null;
 
     _counters[index] = existing.copyWith(
       title: title.trim().isEmpty ? existing.title : title.trim(),
@@ -196,6 +288,8 @@ class CounterController extends ChangeNotifier {
       target: target,
       clearTarget: clearTarget,
       allowNegative: allowNegative,
+      tag: clearTag ? null : (cleanTag ?? existing.tag),
+      clearTag: clearTag,
       updatedAt: DateTime.now(),
     );
 

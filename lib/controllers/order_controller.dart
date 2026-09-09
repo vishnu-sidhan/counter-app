@@ -488,13 +488,18 @@ class OrderController extends ChangeNotifier {
       targetItems.forEach((itemId, qty) {
         if (qty <= 0) return;
         final item = findItem(itemId);
+        final snapshot = order.itemSnapshots[itemId];
+        final name = snapshot?['name']?.toString() ?? item.name;
+        final category = snapshot?['category']?.toString() ?? item.category;
+        final displayName = snapshot?['displayName']?.toString() ?? item.displayName;
+        final colorHex = (snapshot?['colorHex'] as num?)?.toInt() ?? item.colorHex;
         final isPaidItem = order.isPaid || ((order.paidItems[itemId] ?? 0) >= qty);
         result.add((
-          name: item.name,
+          name: name,
           quantity: qty,
-          category: item.category,
-          colorHex: item.colorHex,
-          displayName: item.displayName,
+          category: category,
+          colorHex: colorHex,
+          displayName: displayName,
           isPaidItem: isPaidItem,
         ));
       });
@@ -802,6 +807,9 @@ class OrderController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Alias for cancelEditingOrder
+  void cancelEditing() => cancelEditingOrder();
+
   /// Places a new order or updates an existing order in-place if editingOrderId is set.
   /// Returns a tuple of (token, isEdit).
   Future<({int token, bool isEdit})> punchOrUpdateOrder({
@@ -816,9 +824,17 @@ class OrderController extends ChangeNotifier {
     }
 
     final summaryParts = <String>[];
+    final currentSnapshots = <String, Map<String, dynamic>>{};
     _cart.forEach((itemId, qty) {
       final item = findItem(itemId);
       summaryParts.add('${qty}x ${item.name}');
+      currentSnapshots[itemId] = {
+        'name': item.name,
+        'displayName': item.displayName,
+        'price': item.price,
+        'category': item.category,
+        if (item.colorHex != null) 'colorHex': item.colorHex,
+      };
     });
     final summary = summaryParts.join(', ');
     final total = cartTotal;
@@ -891,6 +907,7 @@ class OrderController extends ChangeNotifier {
           paidAmount: finalPaidAmount,
           paidItems: finalPaidItems,
           paymentMethod: updatedPaymentMethod,
+          itemSnapshots: {...existing.itemSnapshots, ...currentSnapshots},
         );
       }
 
@@ -913,6 +930,7 @@ class OrderController extends ChangeNotifier {
         paidItems: effectiveIsPaid ? (paidItems ?? Map.from(_cart)) : (paidItems ?? const {}),
         paymentMethod: paymentMethod,
         items: Map.from(_cart),
+        itemSnapshots: currentSnapshots,
       );
 
       _orders.add(newOrder);
@@ -964,6 +982,26 @@ class OrderController extends ChangeNotifier {
       await _saveState();
       notifyListeners();
     }
+  }
+
+  /// Alias for completeOrder
+  Future<void> markOrderCompleted(int token) => completeOrder(token);
+
+  /// Clears all completed orders from memory and persistent storage.
+  Future<void> clearCompletedOrders() async {
+    _orders.removeWhere((o) => o.isCompleted);
+    await _storageService.saveOrders(_orders);
+    notifyListeners();
+  }
+
+  /// Archives completed orders to a separate persistent archive key and removes them from active orders.
+  Future<void> archiveCompletedOrders() async {
+    final completed = _orders.where((o) => o.isCompleted).toList();
+    if (completed.isEmpty) return;
+    await _storageService.archiveCompletedOrders(explicitOrders: completed);
+    _orders.removeWhere((o) => o.isCompleted);
+    await _storageService.saveOrders(_orders);
+    notifyListeners();
   }
 
   // ---------------------------------------------------------------------------

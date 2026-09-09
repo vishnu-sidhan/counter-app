@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 /// Immutable domain model representing an individual counter with customization,
-/// targets, and timestamps.
+/// targets, tags, custom ordering, and timestamps.
 @immutable
 class CounterModel {
   final String id;
@@ -11,6 +11,8 @@ class CounterModel {
   final int colorHex;
   final int? target;
   final bool allowNegative;
+  final String? tag;
+  final int orderIndex;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -22,6 +24,8 @@ class CounterModel {
     this.colorHex = 0xFF2563EB, // Default Royal Blue
     this.target,
     this.allowNegative = false,
+    this.tag,
+    this.orderIndex = 0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -55,6 +59,9 @@ class CounterModel {
     int? target,
     bool clearTarget = false,
     bool? allowNegative,
+    String? tag,
+    bool clearTag = false,
+    int? orderIndex,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -66,6 +73,8 @@ class CounterModel {
       colorHex: colorHex ?? this.colorHex,
       target: clearTarget ? null : (target ?? this.target),
       allowNegative: allowNegative ?? this.allowNegative,
+      tag: clearTag ? null : (tag ?? this.tag),
+      orderIndex: orderIndex ?? this.orderIndex,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -81,6 +90,8 @@ class CounterModel {
       'colorHex': colorHex,
       'target': target,
       'allowNegative': allowNegative,
+      'tag': tag,
+      'orderIndex': orderIndex,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -97,6 +108,8 @@ class CounterModel {
       colorHex: (json['colorHex'] as num?)?.toInt() ?? 0xFF2563EB,
       target: (json['target'] as num?)?.toInt(),
       allowNegative: json['allowNegative'] as bool? ?? false,
+      tag: json['tag'] as String?,
+      orderIndex: (json['orderIndex'] as num?)?.toInt() ?? 0,
       createdAt: json['createdAt'] != null
           ? DateTime.tryParse(json['createdAt'] as String) ?? now
           : now,
@@ -118,6 +131,8 @@ class CounterModel {
           colorHex == other.colorHex &&
           target == other.target &&
           allowNegative == other.allowNegative &&
+          tag == other.tag &&
+          orderIndex == other.orderIndex &&
           createdAt == other.createdAt &&
           updatedAt == other.updatedAt;
 
@@ -130,6 +145,8 @@ class CounterModel {
       colorHex.hashCode ^
       target.hashCode ^
       allowNegative.hashCode ^
+      tag.hashCode ^
+      orderIndex.hashCode ^
       createdAt.hashCode ^
       updatedAt.hashCode;
 }

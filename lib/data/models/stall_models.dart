@@ -130,6 +130,7 @@ class StallOrder {
   final Map<String, int> items;
   final double paidAmount;
   final Map<String, int> paidItems;
+  final Map<String, Map<String, dynamic>> itemSnapshots;
 
   StallOrder({
     required this.token,
@@ -144,6 +145,7 @@ class StallOrder {
     this.items = const {},
     this.paidAmount = 0.0,
     this.paidItems = const {},
+    this.itemSnapshots = const {},
   });
 
   String get displayCustomerName {
@@ -176,6 +178,7 @@ class StallOrder {
     Map<String, int>? items,
     double? paidAmount,
     Map<String, int>? paidItems,
+    Map<String, Map<String, dynamic>>? itemSnapshots,
   }) {
     return StallOrder(
       token: token ?? this.token,
@@ -190,6 +193,7 @@ class StallOrder {
       items: items ?? this.items,
       paidAmount: paidAmount ?? this.paidAmount,
       paidItems: paidItems ?? this.paidItems,
+      itemSnapshots: itemSnapshots ?? this.itemSnapshots,
     );
   }
 
@@ -206,6 +210,7 @@ class StallOrder {
         'items': items,
         'paidAmount': paidAmount,
         'paidItems': paidItems,
+        if (itemSnapshots.isNotEmpty) 'itemSnapshots': itemSnapshots,
       };
 
   factory StallOrder.fromJson(Map<String, dynamic> map) {
@@ -233,6 +238,15 @@ class StallOrder {
       parsedPaidItems = Map.from(parsedItems);
     }
 
+    Map<String, Map<String, dynamic>> parsedSnapshots = {};
+    if (map['itemSnapshots'] is Map) {
+      (map['itemSnapshots'] as Map).forEach((k, v) {
+        if (v is Map) {
+          parsedSnapshots[k.toString()] = Map<String, dynamic>.from(v);
+        }
+      });
+    }
+
     return StallOrder(
       token: (map['token'] as num?)?.toInt() ?? 0,
       itemsSummary: map['itemsSummary']?.toString() ?? '',
@@ -248,6 +262,7 @@ class StallOrder {
       items: parsedItems,
       paidAmount: paidAmountVal,
       paidItems: parsedPaidItems,
+      itemSnapshots: parsedSnapshots,
     );
   }
 }

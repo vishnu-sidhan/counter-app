@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../controllers/counter_controller.dart';
 import '../controllers/theme_controller.dart';
+import '../data/models/counter_model.dart';
 import '../widgets/add_edit_counter_sheet.dart';
 import '../widgets/counter_card.dart';
 import '../widgets/csv_import_dialog.dart';
@@ -27,6 +28,7 @@ class HomeScreen extends StatelessWidget {
         required int colorHex,
         int? target,
         required bool allowNegative,
+        String? tag,
       }) {
         controller.addCounter(
           title: title,
@@ -35,6 +37,7 @@ class HomeScreen extends StatelessWidget {
           colorHex: colorHex,
           target: target,
           allowNegative: allowNegative,
+          tag: tag,
         );
       },
     );
@@ -56,6 +59,7 @@ class HomeScreen extends StatelessWidget {
         required int colorHex,
         int? target,
         required bool allowNegative,
+        String? tag,
       }) {
         controller.updateCounter(
           id: counter.id,
@@ -66,6 +70,8 @@ class HomeScreen extends StatelessWidget {
           target: target,
           clearTarget: target == null,
           allowNegative: allowNegative,
+          tag: tag,
+          clearTag: tag == null || tag.trim().isEmpty,
         );
       },
     );
@@ -130,6 +136,60 @@ class HomeScreen extends StatelessWidget {
         final hasCounters = counters.isNotEmpty;
         final totalCounters = controller.totalCountersCount;
         final totalCountSum = controller.totalCountSum;
+
+        Widget buildCounterItem(CounterModel counter) {
+          return Dismissible(
+            key: Key('counter_${counter.id}'),
+            direction: DismissDirection.endToStart,
+            background: Container(
+              margin: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 8,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              decoration: BoxDecoration(
+                color: theme.colorScheme.errorContainer,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Text(
+                    'Delete',
+                    style: TextStyle(
+                      color: theme.colorScheme.onErrorContainer,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Icon(
+                    Icons.delete_outline,
+                    color: theme.colorScheme.onErrorContainer,
+                    size: 26,
+                  ),
+                ],
+              ),
+            ),
+            onDismissed: (_) => _handleDelete(context, counter.id),
+            child: CounterCard(
+              counter: counter,
+              onIncrement: () => controller.increment(counter.id),
+              onDecrement: () => controller.decrement(counter.id),
+              onReset: () => controller.reset(counter.id),
+              onEdit: () => _openEditSheet(context, counter.id),
+              onDelete: () => _handleDelete(context, counter.id),
+              onViewHistory: () {
+                controller.filterLogsByCounter(counter.id);
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (ctx) => HistoryScreen(controller: controller),
+                  ),
+                );
+              },
+            ),
+          );
+        }
 
         return Scaffold(
           appBar: AppBar(
@@ -208,71 +268,62 @@ class HomeScreen extends StatelessWidget {
                           onSortChanged: controller.setSortOption,
                         ),
 
+                      // Category / Tag filter chips (shown when tags exist)
+                      if (controller.allTags.isNotEmpty)
+                        Container(
+                          height: 38,
+                          margin: const EdgeInsets.only(bottom: 8),
+                          child: ListView(
+                            scrollDirection: Axis.horizontal,
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: FilterChip(
+                                  label: const Text('All'),
+                                  selected: controller.selectedTag == null,
+                                  onSelected: (_) => controller.setSelectedTag(null),
+                                ),
+                              ),
+                              ...controller.allTags.map((tag) {
+                                final isSelected = controller.selectedTag == tag;
+                                return Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: FilterChip(
+                                    label: Text('#$tag'),
+                                    selected: isSelected,
+                                    onSelected: (selected) {
+                                      controller.setSelectedTag(selected ? tag : null);
+                                    },
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
+                        ),
+
                       // Counters List or Empty State
                       Expanded(
                         child: !hasCounters
                             ? EmptyState(
-                                isSearching: controller.searchQuery.isNotEmpty,
+                                isSearching: controller.searchQuery.isNotEmpty ||
+                                    controller.selectedTag != null,
                                 onAddCounter: () => _openAddSheet(context),
                               )
-                            : ListView.builder(
-                                padding: const EdgeInsets.only(bottom: 96, top: 4),
-                                itemCount: counters.length,
-                                itemBuilder: (context, index) {
-                                  final counter = counters[index];
-                                  return Dismissible(
-                                    key: Key('counter_${counter.id}'),
-                                    direction: DismissDirection.endToStart,
-                                    background: Container(
-                                      margin: const EdgeInsets.symmetric(
-                                        horizontal: 16,
-                                        vertical: 8,
-                                      ),
-                                      padding: const EdgeInsets.symmetric(horizontal: 24),
-                                      decoration: BoxDecoration(
-                                        color: theme.colorScheme.errorContainer,
-                                        borderRadius: BorderRadius.circular(20),
-                                      ),
-                                      alignment: Alignment.centerRight,
-                                      child: Row(
-                                        mainAxisAlignment: MainAxisAlignment.end,
-                                        children: [
-                                          Text(
-                                            'Delete',
-                                            style: TextStyle(
-                                              color: theme.colorScheme.onErrorContainer,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Icon(
-                                            Icons.delete_outline,
-                                            color: theme.colorScheme.onErrorContainer,
-                                            size: 26,
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    onDismissed: (_) => _handleDelete(context, counter.id),
-                                    child: CounterCard(
-                                      counter: counter,
-                                      onIncrement: () => controller.increment(counter.id),
-                                      onDecrement: () => controller.decrement(counter.id),
-                                      onReset: () => controller.reset(counter.id),
-                                      onEdit: () => _openEditSheet(context, counter.id),
-                                      onDelete: () => _handleDelete(context, counter.id),
-                                      onViewHistory: () {
-                                        controller.filterLogsByCounter(counter.id);
-                                        Navigator.of(context).push(
-                                          MaterialPageRoute(
-                                            builder: (ctx) => HistoryScreen(controller: controller),
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  );
-                                },
-                              ),
+                            : controller.sortOption == SortOption.custom
+                                ? ReorderableListView.builder(
+                                    padding: const EdgeInsets.only(bottom: 96, top: 4),
+                                    itemCount: counters.length,
+                                    onReorder: controller.reorderCounters,
+                                    itemBuilder: (context, index) =>
+                                        buildCounterItem(counters[index]),
+                                  )
+                                : ListView.builder(
+                                    padding: const EdgeInsets.only(bottom: 96, top: 4),
+                                    itemCount: counters.length,
+                                    itemBuilder: (context, index) =>
+                                        buildCounterItem(counters[index]),
+                                  ),
                       ),
                     ],
                   ),

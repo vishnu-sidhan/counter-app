@@ -112,6 +112,7 @@ class _SearchSortBarState extends State<SearchSortBar> {
                         SortOption.recentlyUpdated => Icons.access_time_rounded,
                         SortOption.highestCount => Icons.trending_up_rounded,
                         SortOption.alphabetical => Icons.sort_by_alpha_rounded,
+                        SortOption.custom => Icons.drag_handle_rounded,
                       },
                       size: 20,
                       color: isSelected

@@ -1,20 +1,25 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../controllers/order_controller.dart';
 import '../data/models/stall_models.dart';
 import '../data/services/stall_storage_service.dart';
 import '../services/csv_export_service.dart';
 
 enum OrderHistoryFilter { all, completed, pending }
 
+enum OrderDateRangeFilter { allTime, today, yesterday, last7Days }
+
 class OrderHistoryScreen extends StatefulWidget {
-  final StallStorageService storageService;
+  final StallStorageService? storageService;
+  final OrderController? controller;
   final VoidCallback? onOrdersChanged;
 
   const OrderHistoryScreen({
     super.key,
-    required this.storageService,
+    this.storageService,
+    this.controller,
     this.onOrdersChanged,
-  });
+  }) : assert(storageService != null || controller != null);
 
   @override
   State<OrderHistoryScreen> createState() => _OrderHistoryScreenState();
@@ -24,34 +29,113 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   List<StallOrder> _orders = [];
   bool _isLoading = true;
   OrderHistoryFilter _filter = OrderHistoryFilter.all;
+  OrderDateRangeFilter _dateFilter = OrderDateRangeFilter.allTime;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  StallStorageService get _effectiveStorageService =>
+      widget.controller?.storageService ?? widget.storageService ?? StallStorageService();
 
   @override
   void initState() {
     super.initState();
+    if (widget.controller != null) {
+      widget.controller!.addListener(_onControllerChanged);
+    }
+    _searchController.addListener(() {
+      final q = _searchController.text.trim().toLowerCase();
+      if (q != _searchQuery) {
+        setState(() => _searchQuery = q);
+      }
+    });
     _loadOrders();
   }
 
-  Future<void> _loadOrders() async {
-    final loaded = await widget.storageService.loadOrders();
-    // Sort descending by token / timestamp (most recent first)
-    loaded.sort((a, b) => b.timestamp.compareTo(a.timestamp));
-    if (mounted) {
+  @override
+  void dispose() {
+    widget.controller?.removeListener(_onControllerChanged);
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onControllerChanged() {
+    if (mounted && widget.controller != null) {
+      final list = List<StallOrder>.from(widget.controller!.orders);
+      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
       setState(() {
-        _orders = loaded;
-        _isLoading = false;
+        _orders = list;
       });
     }
   }
 
-  List<StallOrder> get _filteredOrders {
-    switch (_filter) {
-      case OrderHistoryFilter.completed:
-        return _orders.where((o) => o.isCompleted).toList();
-      case OrderHistoryFilter.pending:
-        return _orders.where((o) => !o.isCompleted).toList();
-      case OrderHistoryFilter.all:
-        return _orders;
+  Future<void> _loadOrders() async {
+    if (widget.controller != null) {
+      final list = List<StallOrder>.from(widget.controller!.orders);
+      list.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      if (mounted) {
+        setState(() {
+          _orders = list;
+          _isLoading = false;
+        });
+      }
+    } else {
+      final loaded = await _effectiveStorageService.loadOrders();
+      // Sort descending by token / timestamp (most recent first)
+      loaded.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+      if (mounted) {
+        setState(() {
+          _orders = loaded;
+          _isLoading = false;
+        });
+      }
     }
+  }
+
+  bool _isSameDay(DateTime a, DateTime b) {
+    return a.year == b.year && a.month == b.month && a.day == b.day;
+  }
+
+  List<StallOrder> get _filteredOrders {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final sevenDaysAgo = today.subtract(const Duration(days: 7));
+
+    return _orders.where((o) {
+      // 1. Status Filter
+      if (_filter == OrderHistoryFilter.completed && !o.isCompleted) return false;
+      if (_filter == OrderHistoryFilter.pending && o.isCompleted) return false;
+
+      // 2. Date Range Filter
+      switch (_dateFilter) {
+        case OrderDateRangeFilter.allTime:
+          break;
+        case OrderDateRangeFilter.today:
+          if (!_isSameDay(o.timestamp, now)) return false;
+          break;
+        case OrderDateRangeFilter.yesterday:
+          if (!_isSameDay(o.timestamp, yesterday)) return false;
+          break;
+        case OrderDateRangeFilter.last7Days:
+          if (o.timestamp.isBefore(sevenDaysAgo)) return false;
+          break;
+      }
+
+      // 3. Search Query Filter
+      if (_searchQuery.isNotEmpty) {
+        final tokenStr = '#${o.token}';
+        final tokenRaw = o.token.toString();
+        final custName = o.displayCustomerName.toLowerCase();
+        final summary = o.itemsSummary.toLowerCase();
+        final match = tokenStr.contains(_searchQuery) ||
+            tokenRaw.contains(_searchQuery) ||
+            custName.contains(_searchQuery) ||
+            summary.contains(_searchQuery);
+        if (!match) return false;
+      }
+
+      return true;
+    }).toList();
   }
 
   double get _totalRevenue =>
@@ -89,6 +173,57 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     }
   }
 
+  void _confirmArchiveCompleted() {
+    if (_completedCount == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No completed orders to archive.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Archive Completed Orders?'),
+        content: Text(
+          'This will move $_completedCount completed orders into long-term archive storage to keep active history fast. You can still export archived orders.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              if (widget.controller != null) {
+                await widget.controller!.archiveCompletedOrders();
+              } else {
+                final completed = _orders.where((o) => o.isCompleted).toList();
+                await _effectiveStorageService.archiveCompletedOrders(explicitOrders: completed);
+                await _effectiveStorageService.clearCompletedOrders();
+                await _loadOrders();
+              }
+              widget.onOrdersChanged?.call();
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Completed orders archived successfully.'),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+            child: const Text('Archive'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _confirmClearCompleted() {
     if (_completedCount == 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -119,11 +254,17 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             ),
             onPressed: () async {
               Navigator.pop(ctx);
-              final remaining = await widget.storageService.clearCompletedOrders();
-              remaining.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+              if (widget.controller != null) {
+                await widget.controller!.clearCompletedOrders();
+              } else {
+                final remaining = await _effectiveStorageService.clearCompletedOrders();
+                remaining.sort((a, b) => b.timestamp.compareTo(a.timestamp));
+                if (mounted) {
+                  setState(() => _orders = remaining);
+                }
+              }
+              widget.onOrdersChanged?.call();
               if (mounted) {
-                setState(() => _orders = remaining);
-                widget.onOrdersChanged?.call();
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(
                     content: Text('Completed orders cleared.'),
@@ -156,6 +297,11 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             onPressed: _orders.isEmpty ? null : _exportCsv,
           ),
           IconButton(
+            icon: const Icon(Icons.archive_outlined),
+            tooltip: 'Archive Completed',
+            onPressed: _completedCount == 0 ? null : _confirmArchiveCompleted,
+          ),
+          IconButton(
             icon: const Icon(Icons.delete_sweep_rounded),
             tooltip: 'Clear Completed',
             onPressed: _completedCount == 0 ? null : _confirmClearCompleted,
@@ -169,9 +315,36 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                 // Summary Metrics Banner
                 _buildSummaryBanner(theme),
 
-                // Filter Chips
+                // Search Bar
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search by #Token, Customer, or Items...',
+                      prefixIcon: const Icon(Icons.search, size: 20),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              onPressed: () => _searchController.clear(),
+                            )
+                          : null,
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 10,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ),
+
+                // Filter Chips (Status)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
                   child: Row(
                     children: [
                       _buildFilterChip(
@@ -188,6 +361,17 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                         label: 'Pending ($_pendingCount)',
                         filter: OrderHistoryFilter.pending,
                       ),
+                      const SizedBox(width: 12),
+                      Container(width: 1, height: 24, color: Colors.grey.withAlpha(80)),
+                      const SizedBox(width: 12),
+                      // Date Range Chips
+                      _buildDateFilterChip('All Time', OrderDateRangeFilter.allTime),
+                      const SizedBox(width: 6),
+                      _buildDateFilterChip('Today', OrderDateRangeFilter.today),
+                      const SizedBox(width: 6),
+                      _buildDateFilterChip('Yesterday', OrderDateRangeFilter.yesterday),
+                      const SizedBox(width: 6),
+                      _buildDateFilterChip('Last 7 Days', OrderDateRangeFilter.last7Days),
                     ],
                   ),
                 ),
@@ -276,6 +460,15 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     );
   }
 
+  Widget _buildDateFilterChip(String label, OrderDateRangeFilter dateFilter) {
+    final isSelected = _dateFilter == dateFilter;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (_) => setState(() => _dateFilter = dateFilter),
+    );
+  }
+
   Widget _buildEmptyState() {
     return Center(
       child: Column(
@@ -287,14 +480,16 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             color: Theme.of(context).colorScheme.outline,
           ),
           const SizedBox(height: 12),
-          const Text(
-            'No orders found',
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          Text(
+            _searchQuery.isNotEmpty ? 'No matching orders found' : 'No orders found',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Orders punched from Stall POS will appear here',
-            style: TextStyle(color: Colors.grey, fontSize: 13),
+          Text(
+            _searchQuery.isNotEmpty
+                ? 'Try a different search term or clear filters'
+                : 'Orders punched from Stall POS will appear here',
+            style: const TextStyle(color: Colors.grey, fontSize: 13),
           ),
         ],
       ),
@@ -319,10 +514,14 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
             ),
             onPressed: () async {
               Navigator.pop(ctx);
-              final allOrders = await widget.storageService.loadOrders();
-              allOrders.removeWhere((o) => o.token == token);
-              await widget.storageService.saveOrders(allOrders);
-              await _loadOrders();
+              if (widget.controller != null) {
+                await widget.controller!.deleteOrder(token);
+              } else {
+                final allOrders = await _effectiveStorageService.loadOrders();
+                allOrders.removeWhere((o) => o.token == token);
+                await _effectiveStorageService.saveOrders(allOrders);
+                await _loadOrders();
+              }
               widget.onOrdersChanged?.call();
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
