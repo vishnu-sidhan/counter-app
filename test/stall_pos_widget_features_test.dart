@@ -315,6 +315,102 @@ void main() {
     expect(find.text('#102 (2)'), findsOneWidget);
   });
 
+  testWidgets(
+    'Item Summary tab: tapping ticket chip completes item for that order and decreases count',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      // Switch to Item Summary tab
+      await tester.tap(find.text('Item Summary'));
+      await tester.pumpAndSettle();
+
+      // Initially Chai has total x3 (#101 (2), #102 (1))
+      expect(find.text('x3'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ticket_chip_item_1_101')), findsOneWidget);
+
+      // Tap #101 (2) chip for Masala Chai
+      await tester.tap(find.byKey(const ValueKey('ticket_chip_item_1_101')));
+      await tester.pumpAndSettle();
+
+      // Chai total drops from 3 to 1 (only #102 remains)
+      expect(find.text('x1'), findsOneWidget);
+      expect(find.byKey(const ValueKey('ticket_chip_item_1_101')), findsNothing);
+      expect(find.text('Order #101 completed! (Masala Chai x2)'), findsOneWidget);
+
+      // Switch to Active Orders: Order #101 was auto-completed and is gone!
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+      expect(find.text('#101'), findsNothing);
+      expect(find.text('#102'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Item Summary tab: tapping All Done batch completes item across tickets',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      // Switch to Item Summary tab
+      await tester.tap(find.text('Item Summary'));
+      await tester.pumpAndSettle();
+
+      // Tap All Done on Masala Chai
+      await tester.tap(find.byKey(const ValueKey('complete_btn_item_1')));
+      await tester.pumpAndSettle();
+
+      // Masala Chai is completely cleared from Item Summary!
+      expect(find.text('Masala Chai (Hot Drinks)'), findsNothing);
+      // Only Veg Samosa remains (x2)
+      expect(find.text('x2'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Active Orders tab: tapping Done button marks order completed directly',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      // Switch to Active Orders tab
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('#101'), findsOneWidget);
+      expect(find.byKey(const ValueKey('complete_order_btn_101')), findsOneWidget);
+
+      // Tap Done on Order #101
+      await tester.tap(find.byKey(const ValueKey('complete_order_btn_101')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Order #101 marked completed!'), findsOneWidget);
+      // Order #101 is gone from Active Orders
+      expect(find.text('#101'), findsNothing);
+      expect(find.text('#102'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'Active Orders tab: tapping item toggles completion and completes order when all items are ready',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      // Switch to Active Orders tab
+      await tester.tap(find.text('Active Orders'));
+      await tester.pumpAndSettle();
+
+      // Order #101 only has 1 item (2x Masala Chai). Tapping it marks it ready and completes the order!
+      await tester.tap(find.byKey(const ValueKey('order_101_item_item_1')));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Order #101 marked completed!'), findsOneWidget);
+      expect(find.text('#101'), findsNothing);
+      expect(find.text('#102'), findsOneWidget);
+    },
+  );
+
   testWidgets('Theme toggle switches between Light and Dark mode', (
     WidgetTester tester,
   ) async {

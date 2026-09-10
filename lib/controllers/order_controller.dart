@@ -411,6 +411,9 @@ class OrderController extends ChangeNotifier {
         // Structured items map available
         itemsToAggregate.forEach((itemId, qty) {
           if (qty <= 0) return;
+          final completedQty = order.completedItems[itemId] ?? 0;
+          final remainingQty = qty - completedQty;
+          if (remainingQty <= 0) return;
           final item = findItem(itemId);
 
           final acc = accumulators.putIfAbsent(
@@ -422,8 +425,8 @@ class OrderController extends ChangeNotifier {
               colorHex: item.colorHex,
             ),
           );
-          acc.totalQty += qty;
-          acc.tickets.add(OrderTicketQuantity(token: order.token, quantity: qty));
+          acc.totalQty += remainingQty;
+          acc.tickets.add(OrderTicketQuantity(token: order.token, quantity: remainingQty));
         });
       } else if (order.isPaid && order.itemsSummary.isNotEmpty) {
         // Fallback parser for legacy or raw summaries: e.g. "3x Masala Chai, 2x Veg Samosa"
@@ -478,10 +481,10 @@ class OrderController extends ChangeNotifier {
 
   /// Extracts individual items with their corresponding category and color for an order.
   /// If [customItems] is provided, extracts details for that subset of items instead of [order.items].
-  List<({String name, int quantity, String category, int? colorHex, String displayName, bool isPaidItem})>
+  List<({String itemId, String name, int quantity, int completedQuantity, bool isCompletedItem, String category, int? colorHex, String displayName, bool isPaidItem})>
       getOrderItemsWithCategory(StallOrder order, {Map<String, int>? customItems}) {
     final result =
-        <({String name, int quantity, String category, int? colorHex, String displayName, bool isPaidItem})>[];
+        <({String itemId, String name, int quantity, int completedQuantity, bool isCompletedItem, String category, int? colorHex, String displayName, bool isPaidItem})>[];
 
     final targetItems = customItems ?? order.items;
     if (targetItems.isNotEmpty) {
@@ -494,9 +497,13 @@ class OrderController extends ChangeNotifier {
         final displayName = snapshot?['displayName']?.toString() ?? item.displayName;
         final colorHex = (snapshot?['colorHex'] as num?)?.toInt() ?? item.colorHex;
         final isPaidItem = order.isPaid || ((order.paidItems[itemId] ?? 0) >= qty);
+        final completedQty = order.getCompletedQuantity(itemId);
         result.add((
+          itemId: itemId,
           name: name,
           quantity: qty,
+          completedQuantity: completedQty,
+          isCompletedItem: completedQty >= qty,
           category: category,
           colorHex: colorHex,
           displayName: displayName,
@@ -520,9 +527,14 @@ class OrderController extends ChangeNotifier {
               category: 'General',
             ),
           );
+          final itemId = item.id.isNotEmpty ? item.id : name;
+          final completedQty = order.getCompletedQuantity(itemId);
           result.add((
+            itemId: itemId,
             name: name,
             quantity: qty,
+            completedQuantity: completedQty,
+            isCompletedItem: completedQty >= qty,
             category: item.category,
             colorHex: item.colorHex,
             displayName: item.displayName,
@@ -897,6 +909,14 @@ class OrderController extends ChangeNotifier {
         }
 
         final updatedPaymentMethod = paymentMethod ?? existing.paymentMethod;
+        final updatedCompleted = <String, int>{};
+        for (final entry in existing.completedItems.entries) {
+          if (_cart.containsKey(entry.key)) {
+            final newQty = _cart[entry.key]!;
+            updatedCompleted[entry.key] = entry.value.clamp(0, newQty);
+          }
+        }
+
         _orders[idx] = existing.copyWith(
           itemsSummary: summary,
           total: total,
@@ -906,6 +926,7 @@ class OrderController extends ChangeNotifier {
           isPaid: finalIsPaid,
           paidAmount: finalPaidAmount,
           paidItems: finalPaidItems,
+          completedItems: updatedCompleted,
           paymentMethod: updatedPaymentMethod,
           itemSnapshots: {...existing.itemSnapshots, ...currentSnapshots},
         );
@@ -973,12 +994,16 @@ class OrderController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Marks an order as completed.
+  /// Marks an order as completed. Also synchronizes all items to be marked completed.
   Future<void> completeOrder(int token) async {
     final idx = _orders.indexWhere((o) => o.token == token);
     if (idx != -1) {
-      _orders[idx].isCompleted = true;
-      _orders[idx].completedAt = DateTime.now();
+      final existing = _orders[idx];
+      _orders[idx] = existing.copyWith(
+        isCompleted: true,
+        completedAt: DateTime.now(),
+        completedItems: Map.from(existing.items),
+      );
       await _saveState();
       notifyListeners();
     }
@@ -986,6 +1011,139 @@ class OrderController extends ChangeNotifier {
 
   /// Alias for completeOrder
   Future<void> markOrderCompleted(int token) => completeOrder(token);
+
+  /// Completes a specific quantity (or all remaining quantity if [quantity] is null)
+  /// of an item for an active order ticket.
+  /// If all items for this order become completed, the order is automatically completed.
+  /// Returns true if this completion triggered the entire order to complete.
+  Future<bool> completeOrderItem({
+    required int token,
+    required String itemId,
+    int? quantity,
+  }) async {
+    final idx = _orders.indexWhere((o) => o.token == token);
+    if (idx == -1) return false;
+
+    final order = _orders[idx];
+    final totalQty = order.items[itemId] ?? 0;
+    if (totalQty <= 0) return false;
+
+    final currentCompleted = order.completedItems[itemId] ?? 0;
+    final qtyToAdd = quantity ?? (totalQty - currentCompleted);
+    if (qtyToAdd <= 0) return false;
+
+    final newCompleted = Map<String, int>.from(order.completedItems);
+    newCompleted[itemId] = (currentCompleted + qtyToAdd).clamp(0, totalQty);
+
+    // Check if all items in order are now completed
+    bool allDone = true;
+    for (final entry in order.items.entries) {
+      final done = newCompleted[entry.key] ?? 0;
+      if (done < entry.value) {
+        allDone = false;
+        break;
+      }
+    }
+
+    final updatedOrder = order.copyWith(
+      completedItems: newCompleted,
+      isCompleted: allDone ? true : order.isCompleted,
+      completedAt: allDone ? (order.completedAt ?? DateTime.now()) : order.completedAt,
+    );
+    _orders[idx] = updatedOrder;
+    await _saveState();
+    notifyListeners();
+    return allDone;
+  }
+
+  /// Uncompletes/reverts completion of an item for an order ticket.
+  /// If the order was previously completed, it will be restored to active.
+  Future<void> uncompleteOrderItem({
+    required int token,
+    required String itemId,
+    int? quantity,
+  }) async {
+    final idx = _orders.indexWhere((o) => o.token == token);
+    if (idx == -1) return;
+
+    final order = _orders[idx];
+    final currentCompleted = order.completedItems[itemId] ?? 0;
+    if (currentCompleted <= 0) return;
+
+    final qtyToSubtract = quantity ?? currentCompleted;
+    final newCompleted = Map<String, int>.from(order.completedItems);
+    final remainingCompleted = (currentCompleted - qtyToSubtract).clamp(0, order.items[itemId] ?? 0);
+    if (remainingCompleted > 0) {
+      newCompleted[itemId] = remainingCompleted;
+    } else {
+      newCompleted.remove(itemId);
+    }
+
+    final updatedOrder = order.copyWith(
+      completedItems: newCompleted,
+      isCompleted: false,
+      completedAt: null,
+    );
+    _orders[idx] = updatedOrder;
+    await _saveState();
+    notifyListeners();
+  }
+
+  /// Completes an item across all active tickets in the prep queue.
+  /// Returns a list of order tokens that became fully completed as a result.
+  Future<List<int>> completeAggregatedItem(String itemId) async {
+    final completedOrderTokens = <int>[];
+
+    // Find all active orders that have remaining uncompleted quantity for this item
+    final eligibleOrders = _orders
+        .where((o) => !o.isCompleted && (o.isPaid || getConfirmedOrderItems(o).isNotEmpty))
+        .toList();
+
+    bool stateChanged = false;
+    for (final order in eligibleOrders) {
+      final totalQty = getConfirmedOrderItems(order)[itemId] ?? 0;
+      final completedQty = order.completedItems[itemId] ?? 0;
+      if (totalQty > completedQty) {
+        final fullyDone = await completeOrderItem(
+          token: order.token,
+          itemId: itemId,
+          quantity: totalQty - completedQty,
+        );
+        stateChanged = true;
+        if (fullyDone) {
+          completedOrderTokens.add(order.token);
+        }
+      }
+    }
+
+    if (stateChanged) {
+      await _saveState();
+      notifyListeners();
+    }
+    return completedOrderTokens;
+  }
+
+  /// Completes an item for the oldest pending ticket (FIFO) in the prep queue.
+  /// Returns token of the completed ticket and whether the order became fully completed.
+  Future<({int token, bool isOrderFullyCompleted})?> completeNextTicketForItem(String itemId) async {
+    final eligibleOrders = _orders
+        .where((o) => !o.isCompleted && (o.isPaid || getConfirmedOrderItems(o).isNotEmpty))
+        .toList();
+
+    for (final order in eligibleOrders) {
+      final totalQty = getConfirmedOrderItems(order)[itemId] ?? 0;
+      final completedQty = order.completedItems[itemId] ?? 0;
+      if (totalQty > completedQty) {
+        final orderCompleted = await completeOrderItem(
+          token: order.token,
+          itemId: itemId,
+          quantity: totalQty - completedQty,
+        );
+        return (token: order.token, isOrderFullyCompleted: orderCompleted);
+      }
+    }
+    return null;
+  }
 
   /// Clears all completed orders from memory and persistent storage.
   Future<void> clearCompletedOrders() async {

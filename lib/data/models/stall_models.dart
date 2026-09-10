@@ -130,6 +130,7 @@ class StallOrder {
   final Map<String, int> items;
   final double paidAmount;
   final Map<String, int> paidItems;
+  final Map<String, int> completedItems;
   final Map<String, Map<String, dynamic>> itemSnapshots;
 
   StallOrder({
@@ -145,6 +146,7 @@ class StallOrder {
     this.items = const {},
     this.paidAmount = 0.0,
     this.paidItems = const {},
+    this.completedItems = const {},
     this.itemSnapshots = const {},
   });
 
@@ -164,6 +166,60 @@ class StallOrder {
   /// Whether this order is completely paid
   bool get isFullyPaid => isPaid && remainingDue == 0;
 
+  /// Returns the completed quantity for a specific item.
+  int getCompletedQuantity(String itemId) {
+    if (isCompleted) {
+      return items[itemId] ?? 0;
+    }
+    return completedItems[itemId] ?? 0;
+  }
+
+  /// Returns remaining uncompleted quantity for a specific item.
+  int getPendingQuantity(String itemId) {
+    final total = items[itemId] ?? 0;
+    final completed = getCompletedQuantity(itemId);
+    return (total - completed) > 0 ? (total - completed) : 0;
+  }
+
+  /// Returns true if an item is fully completed.
+  bool isItemCompleted(String itemId) {
+    return getPendingQuantity(itemId) <= 0;
+  }
+
+  /// Returns true if all items in this order are completed.
+  bool get areAllItemsCompleted {
+    if (isCompleted) return true;
+    if (items.isEmpty) return false;
+    for (final entry in items.entries) {
+      if ((completedItems[entry.key] ?? 0) < entry.value) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Total count of all items in this order.
+  int get totalItemsCount => items.values.fold<int>(0, (sum, q) => sum + q);
+
+  /// Total count of completed items in this order.
+  int get completedItemsCount {
+    if (isCompleted) return totalItemsCount;
+    int count = 0;
+    for (final entry in items.entries) {
+      final done = completedItems[entry.key] ?? 0;
+      count += (done > entry.value) ? entry.value : done;
+    }
+    return count;
+  }
+
+  /// Completion progress ratio from 0.0 to 1.0.
+  double get completionProgress {
+    if (isCompleted) return 1.0;
+    final total = totalItemsCount;
+    if (total <= 0) return 0.0;
+    return (completedItemsCount / total).clamp(0.0, 1.0);
+  }
+
   StallOrder copyWith({
     int? token,
     String? itemsSummary,
@@ -178,6 +234,7 @@ class StallOrder {
     Map<String, int>? items,
     double? paidAmount,
     Map<String, int>? paidItems,
+    Map<String, int>? completedItems,
     Map<String, Map<String, dynamic>>? itemSnapshots,
   }) {
     return StallOrder(
@@ -193,6 +250,7 @@ class StallOrder {
       items: items ?? this.items,
       paidAmount: paidAmount ?? this.paidAmount,
       paidItems: paidItems ?? this.paidItems,
+      completedItems: completedItems ?? this.completedItems,
       itemSnapshots: itemSnapshots ?? this.itemSnapshots,
     );
   }
@@ -210,6 +268,7 @@ class StallOrder {
         'items': items,
         'paidAmount': paidAmount,
         'paidItems': paidItems,
+        if (completedItems.isNotEmpty) 'completedItems': completedItems,
         if (itemSnapshots.isNotEmpty) 'itemSnapshots': itemSnapshots,
       };
 
@@ -238,6 +297,17 @@ class StallOrder {
       parsedPaidItems = Map.from(parsedItems);
     }
 
+    Map<String, int> parsedCompletedItems = {};
+    if (map['completedItems'] is Map) {
+      (map['completedItems'] as Map).forEach((k, v) {
+        if (v is num) {
+          parsedCompletedItems[k.toString()] = v.toInt();
+        }
+      });
+    } else if (map['isCompleted'] == true) {
+      parsedCompletedItems = Map.from(parsedItems);
+    }
+
     Map<String, Map<String, dynamic>> parsedSnapshots = {};
     if (map['itemSnapshots'] is Map) {
       (map['itemSnapshots'] as Map).forEach((k, v) {
@@ -262,6 +332,7 @@ class StallOrder {
       items: parsedItems,
       paidAmount: paidAmountVal,
       paidItems: parsedPaidItems,
+      completedItems: parsedCompletedItems,
       itemSnapshots: parsedSnapshots,
     );
   }

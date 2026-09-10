@@ -324,6 +324,146 @@ void main() {
     });
   });
 
+  group('OrderController - Granular Item Completion & Direct Order Completion', () {
+    test('completeOrderItem decrements remaining quantity in combinedActiveOrders and preserves uncompleted items', () async {
+      final chai = controller.menu.firstWhere((m) => m.id == 'item_1');
+      final samosa = controller.menu.firstWhere((m) => m.id == 'item_2');
+
+      // Order 101: 2x Chai, 1x Samosa (Paid)
+      controller.addToCart(chai);
+      controller.addToCart(chai);
+      controller.addToCart(samosa);
+      await controller.punchOrUpdateOrder(customerName: 'Alice', paymentMethod: 'UPI', isPaid: true);
+
+      expect(controller.combinedActiveOrders.length, 2);
+      final initialChai = controller.combinedActiveOrders.firstWhere((i) => i.itemName == 'Masala Chai');
+      expect(initialChai.totalQuantity, 2);
+
+      // Complete 1x Chai for Order 101
+      final orderCompleted1 = await controller.completeOrderItem(
+        token: 101,
+        itemId: 'item_1',
+        quantity: 1,
+      );
+      expect(orderCompleted1, isFalse);
+      expect(controller.activeOrders.length, 1);
+
+      // In combinedActiveOrders, Chai should now have 1 remaining
+      final updatedChai = controller.combinedActiveOrders.firstWhere((i) => i.itemName == 'Masala Chai');
+      expect(updatedChai.totalQuantity, 1);
+      expect(updatedChai.tickets.first.quantity, 1);
+
+      // Complete remaining 1x Chai for Order 101
+      final orderCompleted2 = await controller.completeOrderItem(
+        token: 101,
+        itemId: 'item_1',
+        quantity: 1,
+      );
+      expect(orderCompleted2, isFalse);
+
+      // Chai should now be completely gone from combinedActiveOrders since 0 remaining
+      expect(controller.combinedActiveOrders.any((i) => i.itemName == 'Masala Chai'), isFalse);
+      // Samosa is still pending in combinedActiveOrders
+      expect(controller.combinedActiveOrders.firstWhere((i) => i.itemName == 'Veg Samosa').totalQuantity, 1);
+
+      // Complete the Samosa: this should trigger order auto-completion!
+      final orderCompleted3 = await controller.completeOrderItem(
+        token: 101,
+        itemId: 'item_2',
+      );
+      expect(orderCompleted3, isTrue);
+
+      // Order 101 is now completed and removed from active orders
+      expect(controller.activeOrders, isEmpty);
+      expect(controller.combinedActiveOrders, isEmpty);
+      expect(controller.orders.first.isCompleted, isTrue);
+      expect(controller.orders.first.completedAt, isNotNull);
+    });
+
+    test('uncompleteOrderItem restores item and active order state', () async {
+      final chai = controller.menu.firstWhere((m) => m.id == 'item_1');
+
+      // Order 101: 1x Chai (Paid)
+      controller.addToCart(chai);
+      await controller.punchOrUpdateOrder(customerName: 'Bob', paymentMethod: 'Cash', isPaid: true);
+
+      // Complete item -> order auto-completes
+      await controller.completeOrderItem(token: 101, itemId: 'item_1');
+      expect(controller.activeOrders, isEmpty);
+
+      // Uncomplete item -> order re-opens as active
+      await controller.uncompleteOrderItem(token: 101, itemId: 'item_1');
+      expect(controller.activeOrders.length, 1);
+      expect(controller.orders.first.isCompleted, isFalse);
+      expect(controller.combinedActiveOrders.firstWhere((i) => i.itemName == 'Masala Chai').totalQuantity, 1);
+    });
+
+    test('completeAggregatedItem fulfills item across all tickets in batch', () async {
+      final chai = controller.menu.firstWhere((m) => m.id == 'item_1');
+
+      // Order 101: 2x Chai
+      controller.addToCart(chai);
+      controller.addToCart(chai);
+      await controller.punchOrUpdateOrder(customerName: 'A', paymentMethod: 'UPI', isPaid: true);
+
+      // Order 102: 3x Chai
+      controller.addToCart(chai);
+      controller.addToCart(chai);
+      controller.addToCart(chai);
+      await controller.punchOrUpdateOrder(customerName: 'B', paymentMethod: 'UPI', isPaid: true);
+
+      expect(controller.combinedActiveOrders.firstWhere((i) => i.itemName == 'Masala Chai').totalQuantity, 5);
+
+      // Batch complete all Chai
+      final completedTokens = await controller.completeAggregatedItem('item_1');
+      expect(completedTokens, containsAll([101, 102]));
+      expect(controller.activeOrders, isEmpty);
+      expect(controller.combinedActiveOrders, isEmpty);
+    });
+
+    test('completeNextTicketForItem fulfills oldest pending ticket in FIFO order', () async {
+      final chai = controller.menu.firstWhere((m) => m.id == 'item_1');
+
+      // Order 101: 2x Chai
+      controller.addToCart(chai);
+      controller.addToCart(chai);
+      await controller.punchOrUpdateOrder(customerName: 'A', paymentMethod: 'UPI', isPaid: true);
+
+      // Order 102: 3x Chai
+      controller.addToCart(chai);
+      controller.addToCart(chai);
+      controller.addToCart(chai);
+      await controller.punchOrUpdateOrder(customerName: 'B', paymentMethod: 'UPI', isPaid: true);
+
+      // Complete next ticket for Chai -> completes #101
+      final result = await controller.completeNextTicketForItem('item_1');
+      expect(result?.token, 101);
+      expect(result?.isOrderFullyCompleted, isTrue);
+
+      // Only #102 remains in queue with 3x Chai
+      expect(controller.combinedActiveOrders.firstWhere((i) => i.itemName == 'Masala Chai').totalQuantity, 3);
+      expect(controller.combinedActiveOrders.firstWhere((i) => i.itemName == 'Masala Chai').tickets.first.token, 102);
+    });
+
+    test('completeOrder marks all items 100% completed and removes order from active queue', () async {
+      final chai = controller.menu.firstWhere((m) => m.id == 'item_1');
+      final samosa = controller.menu.firstWhere((m) => m.id == 'item_2');
+
+      controller.addToCart(chai);
+      controller.addToCart(samosa);
+      await controller.punchOrUpdateOrder(customerName: 'C', paymentMethod: 'Cash', isPaid: true);
+
+      await controller.completeOrder(101);
+      final completed = controller.orders.firstWhere((o) => o.token == 101);
+      expect(completed.isCompleted, isTrue);
+      expect(completed.completedItems['item_1'], 1);
+      expect(completed.completedItems['item_2'], 1);
+      expect(completed.completionProgress, 1.0);
+      expect(controller.activeOrders, isEmpty);
+      expect(controller.combinedActiveOrders, isEmpty);
+    });
+  });
+
   group('OrderController - Slash Items & Add-on Linking', () {
     test('detects slash variants and adds selected variant to cart', () async {
       final orItem = MenuItem(

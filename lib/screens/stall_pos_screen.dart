@@ -552,13 +552,93 @@ class _StallPosScreenState extends State<StallPosScreen>
   void _completeOrder(int token) {
     HapticFeedback.lightImpact();
     _controller.markOrderCompleted(token);
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Order #$token marked completed!'),
         behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 1),
+        duration: const Duration(seconds: 2),
       ),
     );
+  }
+
+  void _handleCompleteTicketItem(int token, String itemId, String itemName, int quantity) async {
+    HapticFeedback.mediumImpact();
+    final wasOrderCompleted = await _controller.completeOrderItem(
+      token: token,
+      itemId: itemId,
+      quantity: quantity,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          wasOrderCompleted
+              ? 'Order #$token completed! ($itemName x$quantity)'
+              : '$itemName x$quantity done for Order #$token',
+        ),
+        action: SnackBarAction(
+          label: 'UNDO',
+          onPressed: () {
+            _controller.uncompleteOrderItem(
+              token: token,
+              itemId: itemId,
+              quantity: quantity,
+            );
+          },
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 3),
+      ),
+    );
+  }
+
+  void _handleCompleteAllItem(String itemId, String itemName) async {
+    HapticFeedback.mediumImpact();
+    final completedTokens = await _controller.completeAggregatedItem(itemId);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          completedTokens.isNotEmpty
+              ? 'All $itemName completed! Orders ${completedTokens.map((t) => '#$t').join(', ')} finished!'
+              : 'All $itemName completed!',
+        ),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  void _handleToggleItemCompletion(int token, String itemId, bool complete) async {
+    HapticFeedback.lightImpact();
+    if (complete) {
+      final wasOrderCompleted = await _controller.completeOrderItem(
+        token: token,
+        itemId: itemId,
+      );
+      if (!mounted) return;
+      if (wasOrderCompleted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Order #$token marked completed!'),
+            action: SnackBarAction(
+              label: 'UNDO',
+              onPressed: () {
+                _controller.uncompleteOrderItem(token: token, itemId: itemId);
+              },
+            ),
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } else {
+      await _controller.uncompleteOrderItem(token: token, itemId: itemId);
+    }
   }
 
   void _showAddOrEditItemDialog({MenuItem? existingItem}) {
@@ -1198,6 +1278,7 @@ class _StallPosScreenState extends State<StallPosScreen>
       onEditOrder: _editOrder,
       onDeleteOrder: _confirmDeleteOrder,
       onCompleteOrder: _completeOrder,
+      onToggleItemCompletion: _handleToggleItemCompletion,
     );
   }
 
@@ -1209,6 +1290,8 @@ class _StallPosScreenState extends State<StallPosScreen>
     return ItemSummaryPanel(
       controller: _controller,
       getCategoryColor: _getCategoryColor,
+      onCompleteTicketItem: _handleCompleteTicketItem,
+      onCompleteAllItem: _handleCompleteAllItem,
     );
   }
 }

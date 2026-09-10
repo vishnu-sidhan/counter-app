@@ -2,15 +2,20 @@ import 'package:flutter/material.dart';
 import '../../controllers/order_controller.dart';
 import '../../theme/category_colors.dart';
 
-/// Panel displaying consolidated item preparation queue across all active tickets.
+/// Panel displaying consolidated item preparation queue across all active tickets,
+/// with interactive completion per ticket or by batch.
 class ItemSummaryPanel extends StatelessWidget {
   final OrderController controller;
   final Color Function(String category)? getCategoryColor;
+  final void Function(int token, String itemId, String itemName, int quantity)? onCompleteTicketItem;
+  final void Function(String itemId, String itemName)? onCompleteAllItem;
 
   const ItemSummaryPanel({
     super.key,
     required this.controller,
     this.getCategoryColor,
+    this.onCompleteTicketItem,
+    this.onCompleteAllItem,
   });
 
   Color _resolveCategoryColor(String category, int? itemColorHex) {
@@ -70,7 +75,7 @@ class ItemSummaryPanel extends StatelessWidget {
                 // Category Color Strip
                 Container(
                   width: 5,
-                  height: 48,
+                  height: 52,
                   decoration: BoxDecoration(
                     color: color,
                     borderRadius: BorderRadius.circular(3),
@@ -107,27 +112,64 @@ class ItemSummaryPanel extends StatelessWidget {
                             ),
                           ),
                           ...item.tickets.map((t) {
-                            return Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                                vertical: 2,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.surfaceContainerHighest,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.outlineVariant.withAlpha(80),
-                                ),
-                              ),
-                              child: Text(
-                                '#${t.token} (${t.quantity})',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
+                            return Tooltip(
+                              message: 'Tap to mark done for Order #${t.token}',
+                              child: Material(
+                                color: Colors.transparent,
+                                child: InkWell(
+                                  key: ValueKey('ticket_chip_${item.itemId}_${t.token}'),
+                                  borderRadius: BorderRadius.circular(6),
+                                  onTap: () {
+                                    if (onCompleteTicketItem != null) {
+                                      onCompleteTicketItem!(
+                                        t.token,
+                                        item.itemId,
+                                        item.itemName,
+                                        t.quantity,
+                                      );
+                                    } else {
+                                      controller.completeOrderItem(
+                                        token: t.token,
+                                        itemId: item.itemId,
+                                        quantity: t.quantity,
+                                      );
+                                    }
+                                  },
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 3,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.surfaceContainerHighest,
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.outlineVariant.withAlpha(100),
+                                      ),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.check_circle_outline,
+                                          size: 13,
+                                          color: Colors.green,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '#${t.token} (${t.quantity})',
+                                          style: const TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 ),
                               ),
                             );
@@ -140,31 +182,86 @@ class ItemSummaryPanel extends StatelessWidget {
 
                 const SizedBox(width: 12),
 
-                // Large Badge with Total Quantity to Prepare: e.g. x8
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(12),
-                    boxShadow: [
-                      BoxShadow(
-                        color: color.withAlpha(70),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
+                // Right action area: Large Badge with Total Quantity + Quick Complete Button
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
                       ),
-                    ],
-                  ),
-                  child: Text(
-                    'x${item.totalQuantity}',
-                    style: TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w900,
-                      color: CategoryColorHelper.getContrastingTextColor(color),
+                      decoration: BoxDecoration(
+                        color: color,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: color.withAlpha(70),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        'x${item.totalQuantity}',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          color: CategoryColorHelper.getContrastingTextColor(color),
+                        ),
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 6),
+                    FilledButton.tonalIcon(
+                      key: ValueKey('complete_btn_${item.itemId}'),
+                      onPressed: () {
+                        if (item.tickets.length == 1) {
+                          final t = item.tickets.first;
+                          if (onCompleteTicketItem != null) {
+                            onCompleteTicketItem!(
+                              t.token,
+                              item.itemId,
+                              item.itemName,
+                              t.quantity,
+                            );
+                          } else {
+                            controller.completeOrderItem(
+                              token: t.token,
+                              itemId: item.itemId,
+                              quantity: t.quantity,
+                            );
+                          }
+                        } else {
+                          if (onCompleteAllItem != null) {
+                            onCompleteAllItem!(item.itemId, item.itemName);
+                          } else {
+                            controller.completeAggregatedItem(item.itemId);
+                          }
+                        }
+                      },
+                      icon: Icon(
+                        item.tickets.length == 1 ? Icons.check : Icons.done_all,
+                        size: 13,
+                      ),
+                      label: Text(
+                        item.tickets.length == 1 ? 'Done' : 'All Done',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.green.shade100,
+                        foregroundColor: Colors.green.shade900,
+                        visualDensity: VisualDensity.compact,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

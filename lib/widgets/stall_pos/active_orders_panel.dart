@@ -12,6 +12,7 @@ class ActiveOrdersPanel extends StatelessWidget {
   final ValueChanged<StallOrder>? onEditOrder;
   final ValueChanged<int>? onDeleteOrder;
   final ValueChanged<int>? onCompleteOrder;
+  final void Function(int token, String itemId, bool complete)? onToggleItemCompletion;
 
   const ActiveOrdersPanel({
     super.key,
@@ -20,6 +21,7 @@ class ActiveOrdersPanel extends StatelessWidget {
     this.onEditOrder,
     this.onDeleteOrder,
     this.onCompleteOrder,
+    this.onToggleItemCompletion,
   });
 
   @override
@@ -117,6 +119,7 @@ class ActiveOrdersPanel extends StatelessWidget {
               onEditOrder: onEditOrder,
               onDeleteOrder: onDeleteOrder,
               onCompleteOrder: onCompleteOrder,
+              onToggleItemCompletion: onToggleItemCompletion,
             ),
           ),
 
@@ -196,6 +199,7 @@ class ActiveOrdersPanel extends StatelessWidget {
               onEditOrder: onEditOrder,
               onDeleteOrder: onDeleteOrder,
               onCompleteOrder: onCompleteOrder,
+              onToggleItemCompletion: onToggleItemCompletion,
             ),
           ),
       ],

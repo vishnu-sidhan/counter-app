@@ -13,6 +13,7 @@ class OrderCard extends StatefulWidget {
   final ValueChanged<StallOrder>? onEditOrder;
   final ValueChanged<int>? onDeleteOrder;
   final ValueChanged<int>? onCompleteOrder;
+  final void Function(int token, String itemId, bool complete)? onToggleItemCompletion;
 
   const OrderCard({
     super.key,
@@ -23,6 +24,7 @@ class OrderCard extends StatefulWidget {
     this.onEditOrder,
     this.onDeleteOrder,
     this.onCompleteOrder,
+    this.onToggleItemCompletion,
   });
 
   @override
@@ -183,6 +185,31 @@ class _OrderCardState extends State<OrderCard> {
                             ),
                           ),
                         ),
+                      if (isConfirmedPayment && order.completedItemsCount > 0) ...[
+                        const SizedBox(height: 3),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 1,
+                          ),
+                          decoration: BoxDecoration(
+                            color: order.isCompleted
+                                ? Colors.green.shade100
+                                : Colors.blue.shade100,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            'Ready ${order.completedItemsCount}/${order.totalItemsCount}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: order.isCompleted
+                                  ? Colors.green.shade900
+                                  : Colors.blue.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -216,73 +243,143 @@ class _OrderCardState extends State<OrderCard> {
                 ),
                 child: Column(
                   children: itemsWithCategory.map((item) {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Theme.of(
-                                context,
-                              ).colorScheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              '${item.quantity}x',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 12,
-                                color: Theme.of(
-                                  context,
-                                ).colorScheme.onPrimaryContainer,
+                    return InkWell(
+                      key: ValueKey('order_${order.token}_item_${item.itemId}'),
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: isConfirmedPayment
+                          ? () {
+                              if (widget.onToggleItemCompletion != null) {
+                                widget.onToggleItemCompletion!(
+                                  order.token,
+                                  item.itemId,
+                                  !item.isCompletedItem,
+                                );
+                              } else {
+                                if (item.isCompletedItem) {
+                                  controller.uncompleteOrderItem(
+                                    token: order.token,
+                                    itemId: item.itemId,
+                                  );
+                                } else {
+                                  controller.completeOrderItem(
+                                    token: order.token,
+                                    itemId: item.itemId,
+                                  );
+                                }
+                              }
+                            }
+                          : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            if (isConfirmedPayment) ...[
+                              Icon(
+                                item.isCompletedItem
+                                    ? Icons.check_circle_rounded
+                                    : Icons.circle_outlined,
+                                size: 16,
+                                color: item.isCompletedItem
+                                    ? Colors.green
+                                    : Colors.grey.shade400,
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: item.isCompletedItem
+                                    ? Colors.green.shade50
+                                    : Theme.of(
+                                        context,
+                                      ).colorScheme.primaryContainer,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                '${item.quantity}x',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 12,
+                                  color: item.isCompletedItem
+                                      ? Colors.green.shade900
+                                      : Theme.of(
+                                          context,
+                                        ).colorScheme.onPrimaryContainer,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    item.displayName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ),
-                                if (!isConfirmedPayment &&
-                                    order.hasPartialPayment &&
-                                    !item.isPaidItem) ...[
-                                  const SizedBox(width: 6),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 5,
-                                      vertical: 1,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: Colors.orange.shade100,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Row(
+                                children: [
+                                  Expanded(
                                     child: Text(
-                                      'Extra • Pending',
+                                      item.displayName,
                                       style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.bold,
-                                        color: Colors.orange.shade900,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                        decoration: item.isCompletedItem
+                                            ? TextDecoration.lineThrough
+                                            : null,
+                                        color: item.isCompletedItem
+                                            ? Colors.grey.shade600
+                                            : null,
                                       ),
                                     ),
                                   ),
+                                  if (item.isCompletedItem) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 5,
+                                        vertical: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.green.shade100,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        'Ready',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.green.shade900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (!isConfirmedPayment &&
+                                      order.hasPartialPayment &&
+                                      !item.isPaidItem) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 5,
+                                        vertical: 1,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: Colors.orange.shade100,
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        'Extra • Pending',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.orange.shade900,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ],
-                              ],
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
                     );
                   }).toList(),
@@ -369,6 +466,7 @@ class _OrderCardState extends State<OrderCard> {
                     if (isConfirmedPayment) ...[
                       const SizedBox(width: 6),
                       FilledButton.tonal(
+                        key: ValueKey('complete_order_btn_${order.token}'),
                         onPressed: () => widget.onCompleteOrder?.call(order.token),
                         style: FilledButton.styleFrom(
                           backgroundColor: Colors.green.shade100,
