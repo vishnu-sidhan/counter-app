@@ -3,7 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 import '../data/models/counter_model.dart';
 import '../data/models/counter_log_entry.dart';
-import '../data/services/counter_storage_service.dart';
+import '../data/storage/counter_storage.dart';
+import '../data/storage/app_storage.dart';
 
 /// Supported sort modes for the counters list.
 enum SortOption {
@@ -19,7 +20,7 @@ enum SortOption {
 /// Native state controller for managing multi-counter items,
 /// handling optimistic mutations, search, sort, tags, custom reordering, and background persistence.
 class CounterController extends ChangeNotifier {
-  final CounterStorageService _storageService;
+  final CounterStorage _storageService;
   final Uuid _uuid;
 
   List<CounterModel> _counters = [];
@@ -31,10 +32,10 @@ class CounterController extends ChangeNotifier {
   String? _selectedLogCounterId;
 
   CounterController({
-    CounterStorageService? storageService,
+    CounterStorage? storageService,
     Uuid? uuid,
     SortOption initialSortOption = SortOption.alphabetical,
-  })  : _storageService = storageService ?? CounterStorageService(),
+  })  : _storageService = storageService ?? AppStorage.instance.counterStorage,
         _uuid = uuid ?? const Uuid(),
         _sortOption = initialSortOption;
 
@@ -424,8 +425,8 @@ class CounterController extends ChangeNotifier {
     );
 
     _logs.insert(0, entry);
-    if (_logs.length > CounterStorageService.maxStoredLogs) {
-      _logs = _logs.sublist(0, CounterStorageService.maxStoredLogs);
+    if (_logs.length > CounterStorage.maxStoredLogs) {
+      _logs = _logs.sublist(0, CounterStorage.maxStoredLogs);
     }
     _storageService.saveLogs(List.unmodifiable(_logs));
   }

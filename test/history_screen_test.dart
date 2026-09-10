@@ -21,7 +21,7 @@ void main() {
     );
     await controller.increment(counter.id);
 
-    await tester.pumpWidget(MultiCounterApp(controller: controller, initialIndex: 0));
+    await tester.pumpWidget(StallPosApp(controller: controller, initialIndex: 0));
     await tester.pumpAndSettle();
 
     // Verify history icon button is present in AppBar

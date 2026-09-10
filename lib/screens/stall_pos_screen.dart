@@ -4,7 +4,6 @@ import 'package:flutter/services.dart';
 import '../controllers/order_controller.dart';
 import '../controllers/theme_controller.dart';
 import '../data/models/stall_models.dart';
-import '../data/services/stall_storage_service.dart';
 import '../theme/category_colors.dart';
 import '../widgets/csv_import_dialog.dart';
 import '../widgets/payment_confirmation_dialog.dart';
@@ -12,11 +11,13 @@ import '../widgets/stall_pos/stall_pos_widgets.dart';
 import 'order_history_screen.dart';
 
 // Re-export models and controller for backwards compatibility
+import '../data/storage/stall_storage.dart';
 export '../controllers/order_controller.dart';
 export '../data/models/stall_models.dart';
+export '../data/storage/stall_storage.dart';
 
 class StallPosScreen extends StatefulWidget {
-  final StallStorageService? storageService;
+  final StallStorage? storageService;
   final OrderController? controller;
 
   const StallPosScreen({super.key, this.storageService, this.controller});
@@ -42,7 +43,7 @@ class _StallPosScreenState extends State<StallPosScreen>
       _internalController = false;
     } else {
       _controller = OrderController(
-        storageService: widget.storageService ?? StallStorageService(),
+        storageService: widget.storageService,
       );
       _internalController = true;
       _controller.loadPersistedData();

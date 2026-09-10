@@ -3,9 +3,10 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/counter_model.dart';
 import '../models/counter_log_entry.dart';
+import '../storage/counter_storage.dart';
 
-/// Service responsible for local persistence using SharedPreferences and JSON encoding.
-class CounterStorageService {
+/// Local service responsible for persistence using SharedPreferences and JSON encoding.
+class CounterStorageService implements CounterStorage {
   static const String _storageKey = 'multi_counter_items_v1';
   static const String _logsStorageKey = 'multi_counter_logs_v1';
   static const int maxStoredLogs = 1000;
@@ -21,6 +22,7 @@ class CounterStorageService {
 
   /// Loads all saved counters from local storage.
   /// Returns an empty list if no data exists or on error.
+  @override
   Future<List<CounterModel>> loadCounters() async {
     try {
       final prefs = await _getPrefs();
@@ -52,6 +54,7 @@ class CounterStorageService {
   }
 
   /// Persists the list of counters as a JSON array string.
+  @override
   Future<bool> saveCounters(List<CounterModel> counters) async {
     try {
       final prefs = await _getPrefs();
@@ -65,6 +68,7 @@ class CounterStorageService {
   }
 
   /// Loads all saved activity logs from local storage.
+  @override
   Future<List<CounterLogEntry>> loadLogs() async {
     try {
       final prefs = await _getPrefs();
@@ -96,6 +100,7 @@ class CounterStorageService {
   }
 
   /// Persists the list of activity logs, retaining up to maxStoredLogs entries.
+  @override
   Future<bool> saveLogs(List<CounterLogEntry> logs) async {
     try {
       final prefs = await _getPrefs();
@@ -112,6 +117,7 @@ class CounterStorageService {
   }
 
   /// Clears saved activity logs.
+  @override
   Future<bool> clearLogs() async {
     try {
       final prefs = await _getPrefs();
@@ -123,6 +129,7 @@ class CounterStorageService {
   }
 
   /// Clears all saved counters and logs from storage.
+  @override
   Future<bool> clearAll() async {
     try {
       final prefs = await _getPrefs();

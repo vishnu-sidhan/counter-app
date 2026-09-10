@@ -1,20 +1,13 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/stall_models.dart';
+import '../storage/stall_storage.dart';
 
-/// Storage service responsible for managing Stall POS menus, orders, and tokens.
-class StallStorageService {
+/// Local storage service responsible for managing Stall POS menus, orders, and tokens via SharedPreferences.
+class StallStorageService implements StallStorage {
   static const String _menuKey = 'stall_menu';
   static const String _ordersKey = 'stall_orders';
   static const String _tokenKey = 'stall_next_token';
-
-  // Legacy default dummy names to purge automatically from old storage
-  static const Set<String> _legacyDummyNames = {
-    'Burger',
-    'Fries',
-    'Combo Meal',
-    'Soda / Water',
-  };
 
   final SharedPreferences? _prefs;
 
@@ -24,7 +17,8 @@ class StallStorageService {
     return _prefs ?? await SharedPreferences.getInstance();
   }
 
-  /// Loads menu items, sanitizing any old legacy defaults.
+  /// Loads menu items.
+  @override
   Future<List<MenuItem>> loadMenu() async {
     final prefs = await _getPrefs();
     final raw = prefs.getString(_menuKey);
@@ -32,27 +26,16 @@ class StallStorageService {
 
     try {
       final List decoded = jsonDecode(raw) as List;
-      final items = decoded
+      return decoded
           .map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e as Map)))
-          .where((item) {
-            // Automatically purge legacy sample items (ids 1-4 with sample names)
-            final isLegacySample = (item.id == '1' || item.id == '2' || item.id == '3' || item.id == '4') &&
-                _legacyDummyNames.contains(item.name);
-            return !isLegacySample;
-          })
           .toList();
-
-      // If we filtered out legacy items, persist the cleaned menu
-      if (items.length != decoded.length) {
-        await saveMenu(items);
-      }
-      return items;
     } catch (_) {
       return [];
     }
   }
 
   /// Saves menu items.
+  @override
   Future<void> saveMenu(List<MenuItem> items) async {
     final prefs = await _getPrefs();
     await prefs.setString(
@@ -62,6 +45,7 @@ class StallStorageService {
   }
 
   /// Loads all orders.
+  @override
   Future<List<StallOrder>> loadOrders() async {
     final prefs = await _getPrefs();
     final raw = prefs.getString(_ordersKey);
@@ -78,6 +62,7 @@ class StallStorageService {
   }
 
   /// Saves orders.
+  @override
   Future<void> saveOrders(List<StallOrder> orders) async {
     final prefs = await _getPrefs();
     await prefs.setString(
@@ -87,18 +72,21 @@ class StallStorageService {
   }
 
   /// Loads the next order token counter.
+  @override
   Future<int> loadNextToken() async {
     final prefs = await _getPrefs();
     return prefs.getInt(_tokenKey) ?? 1;
   }
 
   /// Saves the next order token counter.
+  @override
   Future<void> saveNextToken(int token) async {
     final prefs = await _getPrefs();
     await prefs.setInt(_tokenKey, token);
   }
 
   /// Deletes only completed orders from storage, keeping active/pending orders intact.
+  @override
   Future<List<StallOrder>> clearCompletedOrders() async {
     final current = await loadOrders();
     final remaining = current.where((o) => !o.isCompleted).toList();
@@ -108,11 +96,11 @@ class StallStorageService {
 
   static const String _archiveKey = 'stall_orders_archive';
 
-  /// Archives completed orders older than [threshold] into a separate archive store,
   /// Archives completed orders into a separate archive store,
   /// keeping the active orders list lightweight.
   /// If [explicitOrders] is provided, archives those specific orders;
   /// otherwise archives orders completed longer ago than [threshold].
+  @override
   Future<int> archiveCompletedOrders({
     Duration threshold = const Duration(hours: 24),
     List<StallOrder>? explicitOrders,
@@ -160,6 +148,7 @@ class StallStorageService {
   }
 
   /// Loads archived orders from storage.
+  @override
   Future<List<StallOrder>> loadArchivedOrders() async {
     final prefs = await _getPrefs();
     final raw = prefs.getString(_archiveKey);
@@ -176,6 +165,7 @@ class StallStorageService {
   }
 
   /// Clears all order history entirely and resets token counter.
+  @override
   Future<void> clearAllOrders({bool resetToken = false}) async {
     final prefs = await _getPrefs();
     await prefs.remove(_ordersKey);

@@ -1,0 +1,63 @@
+name: Deploy Example to GitHub Pages
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Verify Flutter version
+        run: flutter --version
+
+      - name: Install dependencies (root package)
+        run: flutter pub get
+
+      - name: Run static analysis (root package)
+        run: dart analyze
+
+      - name: Run tests (root package)
+        run: flutter test
+
+      - name: Install dependencies (example app)
+        working-directory: example
+        run: flutter pub get
+
+      - name: Run static analysis (example app)
+        working-directory: example
+        run: dart analyze
+
+      - name: Run tests (example app)
+        working-directory: example
+        run: flutter test
+
+      - name: Build Web release bundle
+        working-directory: example
+        run: flutter build web --release --base-href "/stall-pos/"
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./example/build/web
+          publish_branch: gh-pages

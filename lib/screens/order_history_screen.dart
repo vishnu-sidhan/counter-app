@@ -2,15 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../controllers/order_controller.dart';
 import '../data/models/stall_models.dart';
-import '../data/services/stall_storage_service.dart';
+import '../data/storage/stall_storage.dart';
+import '../data/storage/app_storage.dart';
 import '../services/csv_export_service.dart';
 
-enum OrderHistoryFilter { all, completed, pending }
-
+enum OrderHistoryFilter { all, completed, pending, fullyPaid, partial, unpaid }
 enum OrderDateRangeFilter { allTime, today, yesterday, last7Days }
 
 class OrderHistoryScreen extends StatefulWidget {
-  final StallStorageService? storageService;
+  final StallStorage? storageService;
   final OrderController? controller;
   final VoidCallback? onOrdersChanged;
 
@@ -33,8 +33,8 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
-  StallStorageService get _effectiveStorageService =>
-      widget.controller?.storageService ?? widget.storageService ?? StallStorageService();
+  StallStorage get _effectiveStorageService =>
+      widget.controller?.storageService ?? widget.storageService ?? AppStorage.instance.stallStorage;
 
   @override
   void initState() {

@@ -6,14 +6,14 @@ import 'package:counter_app/controllers/counter_controller.dart';
 import 'package:counter_app/data/services/counter_storage_service.dart';
 
 void main() {
-  testWidgets('MultiCounterApp renders and allows creating a counter', (WidgetTester tester) async {
+  testWidgets('StallPosApp renders and allows creating a counter', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storageService = CounterStorageService(prefs: prefs);
     final controller = CounterController(storageService: storageService);
     await controller.init();
 
-    await tester.pumpWidget(MultiCounterApp(controller: controller, initialIndex: 0));
+    await tester.pumpWidget(StallPosApp(controller: controller, initialIndex: 0));
     await tester.pumpAndSettle();
 
     // Verify empty state is displayed initially
@@ -61,14 +61,14 @@ void main() {
     expect(find.widgetWithText(AppBar, 'Counters'), findsOneWidget);
   });
 
-  testWidgets('MultiCounterApp defaults to Stall POS tab', (WidgetTester tester) async {
+  testWidgets('StallPosApp defaults to Stall POS tab', (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
     final storageService = CounterStorageService(prefs: prefs);
     final controller = CounterController(storageService: storageService);
     await controller.init();
 
-    await tester.pumpWidget(MultiCounterApp(controller: controller));
+    await tester.pumpWidget(StallPosApp(controller: controller));
     await tester.pumpAndSettle();
 
     expect(find.text('⚡ StallPOS'), findsOneWidget);
@@ -81,7 +81,7 @@ void main() {
     final controller = CounterController(storageService: storageService);
     await controller.init();
 
-    await tester.pumpWidget(MultiCounterApp(controller: controller, initialIndex: 0));
+    await tester.pumpWidget(StallPosApp(controller: controller, initialIndex: 0));
     await tester.pumpAndSettle();
 
     // Verify CSV import action exists in AppBar

@@ -1,12 +1,13 @@
 import 'package:flutter/foundation.dart';
 import '../data/models/stall_models.dart';
-import '../data/services/stall_storage_service.dart';
+import '../data/storage/stall_storage.dart';
+import '../data/storage/app_storage.dart';
 
 /// State controller for Stall POS operations:
 /// managing menu catalog, active cart, orders queue, in-place order editing,
 /// deletion, and reactive aggregated kitchen preparations.
 class OrderController extends ChangeNotifier {
-  final StallStorageService _storageService;
+  final StallStorage _storageService;
 
   List<MenuItem> _menu = [];
   List<StallOrder> _orders = [];
@@ -16,8 +17,8 @@ class OrderController extends ChangeNotifier {
   String _selectedCategory = 'All';
   bool _isLoading = true;
 
-  OrderController({StallStorageService? storageService})
-      : _storageService = storageService ?? StallStorageService();
+  OrderController({StallStorage? storageService})
+      : _storageService = storageService ?? AppStorage.instance.stallStorage;
 
   // ---------------------------------------------------------------------------
   // GETTERS
@@ -31,7 +32,7 @@ class OrderController extends ChangeNotifier {
   int? get editingOrderId => _editingOrderId;
   bool get isEditing => _editingOrderId != null;
   String get selectedCategory => _selectedCategory;
-  StallStorageService get storageService => _storageService;
+  StallStorage get storageService => _storageService;
 
   /// Returns only the items/quantities that have been paid for in the given order.
   /// If an item contains add-ons (composite key with '+'), it is only considered confirmed
