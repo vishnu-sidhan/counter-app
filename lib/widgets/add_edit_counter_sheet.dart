@@ -127,14 +127,14 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
     final isEditing = widget.counterToEdit != null;
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomInset),
-      child: Form(
-        key: _formKey,
+    return Material(
+      color: theme.colorScheme.surface,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomInset),
+        child: Form(
+          key: _formKey,
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -364,6 +364,7 @@ class _AddEditCounterSheetState extends State<AddEditCounterSheet> {
             ],
           ),
         ),
+      ),
       ),
     );
   }
