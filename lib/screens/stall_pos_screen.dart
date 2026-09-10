@@ -1196,70 +1196,108 @@ class _StallPosScreenState extends State<StallPosScreen>
                 ),
               const SizedBox(height: 8),
 
-              // 1-Step Pay & Punch button (Visible on POS Register when not in editing mode)
-              if (!_controller.isEditing) ...[
+              // Order Confirmation Action Buttons: Side-by-Side (Pay & Punch + Punch Order)
+              if (!_controller.isEditing)
+                Row(
+                  children: [
+                    // 1-Step Pay & Punch Button
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: FilledButton.icon(
+                          onPressed: _cart.isNotEmpty ? () => _fireOrder(immediatePayment: true) : null,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.blue.shade700,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                          icon: const Icon(
+                            Icons.payment_rounded,
+                            size: 20,
+                          ),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              _cart.isEmpty
+                                  ? 'PAY & PUNCH (1-STEP)'
+                                  : 'PAY & PUNCH (#${_controller.nextToken}) • ₹${_controller.cartTotal.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    // Punch Order (Pay Later) Button
+                    Expanded(
+                      child: SizedBox(
+                        height: 52,
+                        child: FilledButton.icon(
+                          onPressed: _cart.isNotEmpty ? () => _fireOrder() : null,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.green.shade700,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                          ),
+                          icon: const Icon(
+                            Icons.bolt,
+                            size: 22,
+                          ),
+                          label: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Text(
+                              _cart.isEmpty
+                                  ? 'TAP ITEMS TO START (#${_controller.nextToken})'
+                                  : 'PUNCH ORDER (#${_controller.nextToken}) • ₹${_controller.cartTotal.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                // Primary Update Button when editing
                 SizedBox(
                   width: double.infinity,
-                  height: 48,
+                  height: 52,
                   child: FilledButton.icon(
-                    onPressed: _cart.isNotEmpty ? () => _fireOrder(immediatePayment: true) : null,
+                    onPressed: _cart.isNotEmpty ? () => _fireOrder() : null,
                     style: FilledButton.styleFrom(
-                      backgroundColor: Colors.blue.shade700,
+                      backgroundColor: Colors.orange.shade800,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
                     ),
                     icon: const Icon(
-                      Icons.payment_rounded,
-                      size: 22,
+                      Icons.update_rounded,
+                      size: 26,
                     ),
-                    label: Text(
-                      _cart.isEmpty
-                          ? 'PAY & PUNCH (1-STEP)'
-                          : 'PAY & PUNCH (#${_controller.nextToken}) • ₹${_controller.cartTotal.toStringAsFixed(0)}',
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
+                    label: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        _cart.isEmpty
+                            ? 'TAP ITEMS TO UPDATE (#${_controller.editingOrderId})'
+                            : 'Update Order #${_controller.editingOrderId} • ₹${_controller.cartTotal.toStringAsFixed(0)}',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
-              ],
-
-              // Primary Punch / Update Button
-              SizedBox(
-                width: double.infinity,
-                height: 52,
-                child: FilledButton.icon(
-                  onPressed: _cart.isNotEmpty ? () => _fireOrder() : null,
-                  style: FilledButton.styleFrom(
-                    backgroundColor: _controller.isEditing
-                        ? Colors.orange.shade800
-                        : Colors.green.shade700,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  icon: Icon(
-                    _controller.isEditing ? Icons.update_rounded : Icons.bolt,
-                    size: 26,
-                  ),
-                  label: Text(
-                    _cart.isEmpty
-                        ? (_controller.isEditing
-                              ? 'TAP ITEMS TO UPDATE (#${_controller.editingOrderId})'
-                              : 'TAP ITEMS TO START (#${_controller.nextToken})')
-                        : (_controller.isEditing
-                              ? 'Update Order #${_controller.editingOrderId} • ₹${_controller.cartTotal.toStringAsFixed(0)}'
-                              : 'PUNCH ORDER (#${_controller.nextToken}) • ₹${_controller.cartTotal.toStringAsFixed(0)}'),
-                    style: const TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
             ],
           ),
         ),

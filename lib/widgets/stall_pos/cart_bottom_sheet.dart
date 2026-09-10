@@ -513,70 +513,113 @@ class CartBottomSheet {
                                 ),
                               ],
                             ),
-                            if (!controller.isEditing && onPayAndPunch != null) ...[
+                            if (!controller.isEditing && onPayAndPunch != null)
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: SizedBox(
+                                      height: 52,
+                                      child: FilledButton.icon(
+                                        onPressed: () {
+                                          Navigator.pop(sheetContext);
+                                          onPayAndPunch();
+                                        },
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: Colors.blue.shade700,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                                        ),
+                                        icon: const Icon(
+                                          Icons.payment_rounded,
+                                          size: 20,
+                                        ),
+                                        label: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            'PAY & PUNCH (#${controller.nextToken}) • ₹${controller.cartTotal.toStringAsFixed(0)}',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: SizedBox(
+                                      height: 52,
+                                      child: FilledButton.icon(
+                                        onPressed: () {
+                                          Navigator.pop(sheetContext);
+                                          onCheckout();
+                                        },
+                                        style: FilledButton.styleFrom(
+                                          backgroundColor: Colors.green.shade700,
+                                          shape: RoundedRectangleBorder(
+                                            borderRadius: BorderRadius.circular(12),
+                                          ),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                                        ),
+                                        icon: const Icon(
+                                          Icons.bolt,
+                                          size: 22,
+                                        ),
+                                        label: FittedBox(
+                                          fit: BoxFit.scaleDown,
+                                          child: Text(
+                                            'PUNCH ORDER (#${controller.nextToken}) • ₹${controller.cartTotal.toStringAsFixed(0)}',
+                                            style: const TextStyle(
+                                              fontSize: 14,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
                               SizedBox(
                                 width: double.infinity,
-                                height: 48,
+                                height: 52,
                                 child: FilledButton.icon(
                                   onPressed: () {
                                     Navigator.pop(sheetContext);
-                                    onPayAndPunch();
+                                    onCheckout();
                                   },
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: Colors.blue.shade700,
+                                    backgroundColor: controller.isEditing
+                                        ? Colors.orange.shade800
+                                        : Colors.green.shade700,
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(12),
                                     ),
                                   ),
-                                  icon: const Icon(
-                                    Icons.payment_rounded,
-                                    size: 22,
+                                  icon: Icon(
+                                    controller.isEditing
+                                        ? Icons.update_rounded
+                                        : Icons.bolt,
+                                    size: 24,
                                   ),
-                                  label: Text(
-                                    'PAY & PUNCH (#${controller.nextToken}) • ₹${controller.cartTotal.toStringAsFixed(0)}',
-                                    style: const TextStyle(
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
+                                  label: FittedBox(
+                                    fit: BoxFit.scaleDown,
+                                    child: Text(
+                                      controller.isEditing
+                                          ? 'Update Order #${controller.editingOrderId} • ₹${controller.cartTotal.toStringAsFixed(0)}'
+                                          : 'PUNCH ORDER (#${controller.nextToken}) • ₹${controller.cartTotal.toStringAsFixed(0)}',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w900,
+                                      ),
                                     ),
                                   ),
                                 ),
                               ),
-                              const SizedBox(height: 8),
-                            ],
-
-                            SizedBox(
-                              width: double.infinity,
-                              height: 52,
-                              child: FilledButton.icon(
-                                onPressed: () {
-                                  Navigator.pop(sheetContext);
-                                  onCheckout();
-                                },
-                                style: FilledButton.styleFrom(
-                                  backgroundColor: controller.isEditing
-                                      ? Colors.orange.shade800
-                                      : Colors.green.shade700,
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                ),
-                                icon: Icon(
-                                  controller.isEditing
-                                      ? Icons.update_rounded
-                                      : Icons.bolt,
-                                  size: 24,
-                                ),
-                                label: Text(
-                                  controller.isEditing
-                                      ? 'Update Order #${controller.editingOrderId} • ₹${controller.cartTotal.toStringAsFixed(0)}'
-                                      : 'PUNCH ORDER (#${controller.nextToken}) • ₹${controller.cartTotal.toStringAsFixed(0)}',
-                                  style: const TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w900,
-                                  ),
-                                ),
-                              ),
-                            ),
                           ],
                         ),
                       ),

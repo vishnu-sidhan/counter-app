@@ -1,6 +1,6 @@
-# Multi Counter ⚡
+# StallPOS ⚡
 
-A modern, offline-first, ergonomic Multi-Counter and Stall Point-of-Sale (POS) system built with Flutter and Material 3. Designed for fast one-handed thumb interaction (Fitts's Law), zero-config persistence, goal tracking, bulk CSV imports, and event/food counter ticketing.
+A modern, offline-first, ergonomic Stall Point-of-Sale (POS) and Multi-Counter system built with Flutter and Material 3. Designed for fast one-handed thumb interaction (Fitts's Law), zero-config persistence, goal tracking, bulk CSV imports, and event/food counter ticketing.
 
 ---
 

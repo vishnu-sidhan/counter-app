@@ -74,30 +74,6 @@ class MenuItemCard extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (item.effectiveIsAddon)
-                        Container(
-                          margin: const EdgeInsets.only(bottom: 4),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 7,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.amber.shade700.withAlpha(40),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: Colors.amber.shade700,
-                              width: 1,
-                            ),
-                          ),
-                          child: Text(
-                            '+ Add-on',
-                            style: TextStyle(
-                              color: Colors.amber.shade900,
-                              fontWeight: FontWeight.bold,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ),
                       Text(
                         item.displayName,
                         textAlign: TextAlign.center,

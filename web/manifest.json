@@ -1,11 +1,11 @@
 {
-    "name": "counter_app",
-    "short_name": "counter_app",
+    "name": "StallPOS",
+    "short_name": "StallPOS",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "StallPOS - Modern Point of Sale & Food Stall System",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

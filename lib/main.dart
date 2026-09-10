@@ -36,7 +36,7 @@ class MultiCounterApp extends StatelessWidget {
       listenable: themeCtrl,
       builder: (context, _) {
         return MaterialApp(
-          title: 'Multi Counter',
+          title: 'StallPOS',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,

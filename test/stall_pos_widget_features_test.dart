@@ -578,7 +578,7 @@ void main() {
       await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
       await tester.pumpAndSettle();
 
-      expect(find.text('+ Add-on'), findsOneWidget);
+      expect(find.text('+ Add-on'), findsNothing);
 
       // 1. Try tapping Add-on with empty cart -> blocked
       await tester.tap(find.text('Extra Cheese (Addons)'));
