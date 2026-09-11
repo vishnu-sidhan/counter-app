@@ -270,7 +270,7 @@ class CartBottomSheet {
                                           ),
                                         ),
                                       ],
-                                      if (controller.menu.any((m) => m.effectiveIsAddon)) ...[
+                                      if (controller.hasAddonsForCategory(item.category)) ...[
                                         const SizedBox(height: 4),
                                         if (!controller.canAddAnyAddon(item.id))
                                           Container(

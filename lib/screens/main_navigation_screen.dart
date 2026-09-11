@@ -7,11 +7,13 @@ import 'stall_pos_screen.dart';
 class MainNavigationScreen extends StatefulWidget {
   final CounterController controller;
   final int initialIndex;
+  final List<Widget>? extraActions;
 
   const MainNavigationScreen({
     super.key,
     required this.controller,
     this.initialIndex = 1,
+    this.extraActions,
   });
 
   @override
@@ -33,8 +35,13 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          HomeScreen(controller: widget.controller),
-          const StallPosScreen(),
+          HomeScreen(
+            controller: widget.controller,
+            extraActions: widget.extraActions,
+          ),
+          StallPosScreen(
+            extraActions: widget.extraActions,
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(

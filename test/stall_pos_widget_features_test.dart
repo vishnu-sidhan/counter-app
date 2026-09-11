@@ -1158,5 +1158,103 @@ void main() {
       expect(find.textContaining('2x Mayo (+₹30)'), findsOneWidget);
     },
   );
+
+  testWidgets(
+    'Category-linked add-ons only allow linking to matching category items and scope in cart modal',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      SharedPreferences.setMockInitialValues({
+        'stall_menu': jsonEncode([
+          {
+            'id': 'item_chai',
+            'name': 'Masala Chai',
+            'price': 20.0,
+            'category': 'Beverages',
+          },
+          {
+            'id': 'item_burger',
+            'name': 'Veg Burger',
+            'price': 80.0,
+            'category': 'Fast Food',
+          },
+          {
+            'id': 'addon_cheese',
+            'name': 'Extra Cheese',
+            'price': 20.0,
+            'category': 'Addons',
+            'isAddon': true,
+            'linkedCategory': 'Fast Food',
+          },
+          {
+            'id': 'addon_ginger',
+            'name': 'Ginger',
+            'price': 5.0,
+            'category': 'Addons',
+            'isAddon': true,
+            'linkedCategory': 'Beverages',
+          },
+        ]),
+        'stall_orders': jsonEncode([]),
+        'stall_next_token': 101,
+      });
+
+      await tester.pumpWidget(const MaterialApp(home: StallPosScreen()));
+      await tester.pumpAndSettle();
+
+      // 1. Add Masala Chai (Beverages) to cart
+      await tester.tap(find.text('Masala Chai (Beverages)').first);
+      await tester.pumpAndSettle();
+
+      // 2. Try to tap Extra Cheese (linkedCategory: Fast Food)
+      // Since no Fast Food item is in the cart, it must be rejected with a SnackBar!
+      final cheeseFinder = find.text('Extra Cheese (Addons)').first;
+      await tester.ensureVisible(cheeseFinder);
+      await tester.tap(cheeseFinder);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Add-on [Extra Cheese] can only be added to "Fast Food" items. Please add one first.'),
+        findsOneWidget,
+      );
+
+      // 3. Add Veg Burger (Fast Food) to cart
+      await tester.tap(find.text('Veg Burger (Fast Food)').first);
+      await tester.pumpAndSettle();
+
+      // 4. Tap Extra Cheese again - it should now link directly to Veg Burger!
+      await tester.tap(find.text('Extra Cheese (Addons)').first);
+      await tester.pumpAndSettle();
+      expect(
+        find.text('Added [Extra Cheese] to Veg Burger (Fast Food)'),
+        findsOneWidget,
+      );
+
+      // 5. Open Review Cart bottom sheet
+      await tester.tap(find.text('View Cart'));
+      await tester.pumpAndSettle();
+
+      // 6. Chai (Beverages) should have '+ Extras / Add-on' button
+      final extrasButtons = find.text('+ Extras / Add-on');
+      expect(extrasButtons, findsWidgets);
+
+      // Tap the first extras button (which is on Masala Chai)
+      await tester.tap(extrasButtons.first);
+      await tester.pumpAndSettle();
+
+      // 7. Verify AddonsForCartItemModal only shows Ginger, NOT Extra Cheese!
+      final modalFinder = find.byType(BottomSheet);
+      expect(
+        find.descendant(of: modalFinder, matching: find.text('Ginger')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: modalFinder, matching: find.text('Extra Cheese')),
+        findsNothing,
+      );
+    },
+  );
 }
 

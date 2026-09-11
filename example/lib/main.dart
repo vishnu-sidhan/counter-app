@@ -153,100 +153,186 @@ class _ExampleHomeScreenState extends State<ExampleHomeScreen> {
     );
   }
 
+  @override
+  Widget build(BuildContext context) {
+    return MainNavigationScreen(
+      controller: _counterController,
+      initialIndex: 1, // Start directly in Stall POS
+      extraActions: [
+        StorageConnectionButton(
+          config: _config,
+          onTap: _openStorageConfigDialog,
+        ),
+      ],
+    );
+  }
+}
+
+/// A responsive, interactive button displaying current storage connection state
+/// (Local Storage vs Remote API) and providing one-tap access to storage configuration.
+class StorageConnectionButton extends StatelessWidget {
+  final RemoteStorageConfig config;
+  final VoidCallback onTap;
+
+  const StorageConnectionButton({
+    super.key,
+    required this.config,
+    required this.onTap,
+  });
+
   String _formatServerLabel(String url) {
     try {
       final uri = Uri.parse(url);
       final host = uri.host.isNotEmpty ? uri.host : url;
-      return host.length > 20 ? '${host.substring(0, 18)}...' : host;
+      return host.length > 18 ? '${host.substring(0, 16)}...' : host;
     } catch (_) {
-      return url.length > 20 ? '${url.substring(0, 18)}...' : url;
+      return url.length > 18 ? '${url.substring(0, 16)}...' : url;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isRemote = _config.isRemoteEnabled && _config.baseUrl.isNotEmpty;
+    final isRemote = config.isRemoteEnabled && config.baseUrl.trim().isNotEmpty;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isCompact = screenWidth < 600;
 
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Host App - Stall POS'),
-        actions: [
-          // Interactive Storage Badge Pill
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8.0),
-            child: InkWell(
-              onTap: _openStorageConfigDialog,
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: isRemote
-                      ? Colors.green.withValues(alpha: 0.15)
-                      : Colors.grey.withValues(alpha: 0.15),
-                  border: Border.all(
-                    color: isRemote ? Colors.green : Colors.grey.shade400,
-                    width: 1.2,
+    const tooltipText = 'Storage Configuration';
+
+    if (isCompact) {
+      return Tooltip(
+        message: tooltipText,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: isRemote
+                        ? (isDark
+                            ? Colors.green.withValues(alpha: 0.25)
+                            : Colors.green.withValues(alpha: 0.12))
+                        : (isDark
+                            ? Colors.white10
+                            : Colors.black.withValues(alpha: 0.05)),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isRemote ? Colors.green : Colors.grey.shade400,
+                      width: 1.2,
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(20),
+                  child: Icon(
+                    isRemote ? Icons.cloud_done : Icons.cloud_outlined,
+                    size: 18,
+                    color: isRemote
+                        ? (isDark ? Colors.greenAccent : Colors.green.shade700)
+                        : (isDark ? Colors.grey.shade400 : Colors.grey.shade700),
+                  ),
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isRemote ? Colors.green : Colors.grey,
+                Positioned(
+                  right: -1,
+                  top: -1,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isRemote ? Colors.greenAccent : Colors.grey,
+                      border: Border.all(
+                        color: Theme.of(context).scaffoldBackgroundColor,
+                        width: 1.2,
                       ),
                     ),
-                    const SizedBox(width: 6),
-                    Text(
-                      isRemote
-                          ? 'Remote: ${_formatServerLabel(_config.baseUrl)}'
-                          : 'Local Storage',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                        color: isRemote
-                            ? (ThemeController.instance.isDark
-                                ? Colors.greenAccent
-                                : Colors.green.shade800)
-                            : (ThemeController.instance.isDark
-                                ? Colors.grey.shade300
-                                : Colors.grey.shade800),
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Tooltip(
+      message: tooltipText,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 4.0),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 10,
+              vertical: 5,
+            ),
+            decoration: BoxDecoration(
+              color: isRemote
+                  ? (isDark
+                      ? Colors.green.withValues(alpha: 0.2)
+                      : Colors.green.withValues(alpha: 0.12))
+                  : (isDark
+                      ? Colors.white10
+                      : Colors.grey.withValues(alpha: 0.12)),
+              border: Border.all(
+                color: isRemote ? Colors.green : Colors.grey.shade400,
+                width: 1.2,
               ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isRemote ? Colors.green : Colors.grey,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  isRemote ? Icons.cloud_done : Icons.cloud_outlined,
+                  size: 15,
+                  color: isRemote
+                      ? (isDark ? Colors.greenAccent : Colors.green.shade800)
+                      : (isDark ? Colors.grey.shade400 : Colors.grey.shade700),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  isRemote
+                      ? 'Remote: ${_formatServerLabel(config.baseUrl)}'
+                      : 'Local Storage',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: isRemote
+                        ? (isDark
+                            ? Colors.greenAccent
+                            : Colors.green.shade800)
+                        : (isDark
+                            ? Colors.grey.shade300
+                            : Colors.grey.shade800),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Icon(
+                  Icons.tune_rounded,
+                  size: 13,
+                  color: isRemote
+                      ? (isDark
+                          ? Colors.greenAccent.withValues(alpha: 0.8)
+                          : Colors.green.shade700)
+                      : (isDark ? Colors.grey.shade400 : Colors.grey.shade600),
+                ),
+              ],
             ),
           ),
-          IconButton(
-            tooltip: 'Storage Configuration',
-            icon: Icon(
-              isRemote ? Icons.cloud_sync : Icons.cloud_off_outlined,
-              color: isRemote ? Colors.green : null,
-            ),
-            onPressed: _openStorageConfigDialog,
-          ),
-          IconButton(
-            tooltip: 'Toggle Theme',
-            icon: Icon(
-              ThemeController.instance.isDark
-                  ? Icons.light_mode
-                  : Icons.dark_mode,
-            ),
-            onPressed: () => ThemeController.instance.toggleTheme(),
-          ),
-        ],
-      ),
-      body: MainNavigationScreen(
-        controller: _counterController,
-        initialIndex: 1, // Start directly in Stall POS
+        ),
       ),
     );
   }

@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Example App (Storage Config & StallPOS)",
+      "request": "launch",
+      "type": "dart",
+      "program": "example/lib/main.dart"
+    },
+    {
+      "name": "StallPOS Package Standalone",
+      "request": "launch",
+      "type": "dart",
+      "program": "lib/main.dart"
+    }
+  ]
+}

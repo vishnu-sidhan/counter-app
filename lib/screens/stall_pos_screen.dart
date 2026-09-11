@@ -19,8 +19,14 @@ export '../data/storage/stall_storage.dart';
 class StallPosScreen extends StatefulWidget {
   final StallStorage? storageService;
   final OrderController? controller;
+  final List<Widget>? extraActions;
 
-  const StallPosScreen({super.key, this.storageService, this.controller});
+  const StallPosScreen({
+    super.key,
+    this.storageService,
+    this.controller,
+    this.extraActions,
+  });
 
   @override
   State<StallPosScreen> createState() => _StallPosScreenState();
@@ -155,7 +161,29 @@ class _StallPosScreenState extends State<StallPosScreen>
         return;
       }
 
-      final eligibleBaseItems = baseItems.where((b) {
+      final matchingCategoryItems = baseItems
+          .where((b) => item.isApplicableToCategory(b.category))
+          .toList();
+
+      if (matchingCategoryItems.isEmpty) {
+        final targetCatName = item.linkedCategory?.isNotEmpty == true
+            ? item.linkedCategory!
+            : item.category;
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Add-on [${item.name}] can only be added to "$targetCatName" items. Please add one first.',
+            ),
+            backgroundColor: Colors.deepOrange,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 2),
+          ),
+        );
+        return;
+      }
+
+      final eligibleBaseItems = matchingCategoryItems.where((b) {
         if (item.hasSlashNameVariants) {
           return item.slashNameVariants.any((v) =>
               _controller.getAddonItemCount(b.id, item.id, resolvedAddonName: v) <
@@ -729,18 +757,20 @@ class _StallPosScreenState extends State<StallPosScreen>
           style: TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Center(
-              child: Text(
-                'Orders: ${_controller.orders.length} | ₹${totalRevenue.toStringAsFixed(0)}',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12,
+          if (MediaQuery.of(context).size.width >= 420)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Center(
+                child: Text(
+                  'Orders: ${_controller.orders.length} | ₹${totalRevenue.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             ),
-          ),
+          if (widget.extraActions != null) ...widget.extraActions!,
           IconButton(
             icon: const Icon(Icons.receipt_long_rounded),
             tooltip: 'Order History',

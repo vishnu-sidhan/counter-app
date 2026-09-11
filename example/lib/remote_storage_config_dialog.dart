@@ -175,11 +175,12 @@ class _RemoteStorageConfigDialogState extends State<RemoteStorageConfigDialog> {
     final isDark = theme.brightness == Brightness.dark;
 
     return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 24.0),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 540),
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -272,15 +273,16 @@ class _RemoteStorageConfigDialogState extends State<RemoteStorageConfigDialog> {
                 ),
               ] else ...[
                 // Quick Demo pre-fill button
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 8,
+                  runSpacing: 4,
                   children: [
-                    Expanded(
-                      child: Text(
-                        'API Connection Details',
-                        style: theme.textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                        ),
+                    Text(
+                      'API Connection Details',
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
                     TextButton.icon(
@@ -359,20 +361,19 @@ class _RemoteStorageConfigDialogState extends State<RemoteStorageConfigDialog> {
                 const SizedBox(height: 12),
 
                 // Test Connection Button & Status
-                Row(
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _isTesting ? null : _runConnectionTest,
-                      icon: _isTesting
-                          ? const SizedBox(
-                              width: 16,
-                              height: 16,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                          : const Icon(Icons.wifi_find_rounded),
-                      label: Text(_isTesting ? 'Testing...' : 'Test Connection'),
-                    ),
-                  ],
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: _isTesting ? null : _runConnectionTest,
+                    icon: _isTesting
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.wifi_find_rounded),
+                    label: Text(_isTesting ? 'Testing...' : 'Test Connection'),
+                  ),
                 ),
 
                 if (_testResultStatus != null) ...[
@@ -425,14 +426,15 @@ class _RemoteStorageConfigDialogState extends State<RemoteStorageConfigDialog> {
               const SizedBox(height: 24),
 
               // Action Buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
                 children: [
                   TextButton(
                     onPressed: () => Navigator.of(context).pop(),
                     child: const Text('Cancel'),
                   ),
-                  const SizedBox(width: 8),
                   FilledButton.icon(
                     onPressed: _handleSave,
                     icon: const Icon(Icons.save_rounded, size: 18),

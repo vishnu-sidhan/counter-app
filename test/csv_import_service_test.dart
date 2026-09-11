@@ -148,6 +148,35 @@ Combo,120,Combos''';
         }
       }
     });
+
+    test('parses is_addon and linked_category columns for category-linked add-ons', () {
+      const csv = '''name,price,category,is_addon,linked_category
+Veg Burger,80,Fast Food,false,
+Extra Cheese,25,Addons,true,Fast Food
+Ginger,5,Extras,true,Beverages''';
+
+      final result = CsvImportService.parseMenuItemsFromCsv(csv);
+      expect(result.items.length, 3);
+
+      final burger = result.items[0];
+      expect(burger.name, 'Veg Burger');
+      expect(burger.isAddon, isFalse);
+      expect(burger.linkedCategory, isNull);
+
+      final cheese = result.items[1];
+      expect(cheese.name, 'Extra Cheese');
+      expect(cheese.isAddon, isTrue);
+      expect(cheese.linkedCategory, 'Fast Food');
+      expect(cheese.isApplicableToCategory('Fast Food'), isTrue);
+      expect(cheese.isApplicableToCategory('Beverages'), isFalse);
+
+      final ginger = result.items[2];
+      expect(ginger.name, 'Ginger');
+      expect(ginger.isAddon, isTrue);
+      expect(ginger.linkedCategory, 'Beverages');
+      expect(ginger.isApplicableToCategory('Beverages'), isTrue);
+      expect(ginger.isApplicableToCategory('Fast Food'), isFalse);
+    });
   });
 
   group('CsvImportService - Counters', () {

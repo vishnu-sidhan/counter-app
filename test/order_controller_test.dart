@@ -1042,5 +1042,174 @@ void main() {
       expect(controller.cartAddonsTotal, 35.0);
       expect(controller.cartTotal, 125.0);
     });
+
+    group('Category-Linked Add-on Architecture', () {
+      test('MenuItem effectiveLinkedCategories and isApplicableToCategory logic', () {
+        // Explicit single category
+        const teaAddon = MenuItem(
+          id: 'addon_ginger',
+          name: 'Extra Ginger',
+          price: 5.0,
+          category: 'Addons',
+          isAddon: true,
+          linkedCategory: 'Beverages',
+        );
+        expect(teaAddon.effectiveLinkedCategories, ['Beverages']);
+        expect(teaAddon.isApplicableToCategory('Beverages'), isTrue);
+        expect(teaAddon.isApplicableToCategory('beverages'), isTrue);
+        expect(teaAddon.isApplicableToCategory('Fast Food'), isFalse);
+
+        // Explicit multi-category (slash variants)
+        const multiAddon = MenuItem(
+          id: 'addon_cheese',
+          name: 'Extra Cheese',
+          price: 20.0,
+          category: 'Extras',
+          isAddon: true,
+          linkedCategory: 'Fast Food / Snacks',
+        );
+        expect(multiAddon.effectiveLinkedCategories, ['Fast Food', 'Snacks']);
+        expect(multiAddon.isApplicableToCategory('Fast Food'), isTrue);
+        expect(multiAddon.isApplicableToCategory('Snacks'), isTrue);
+        expect(multiAddon.isApplicableToCategory('Beverages'), isFalse);
+
+        // Explicit universal 'All'
+        const universalAddon = MenuItem(
+          id: 'addon_bag',
+          name: 'Eco Carry Bag',
+          price: 10.0,
+          category: 'Packaging',
+          isAddon: true,
+          linkedCategory: 'All',
+        );
+        expect(universalAddon.effectiveLinkedCategories, ['All']);
+        expect(universalAddon.isApplicableToCategory('Beverages'), isTrue);
+        expect(universalAddon.isApplicableToCategory('Desserts'), isTrue);
+
+        // Implicit category inheritance (not named 'addon' or 'extras')
+        const inheritedAddon = MenuItem(
+          id: 'addon_cream',
+          name: 'Whipped Cream',
+          price: 15.0,
+          category: 'Desserts',
+          isAddon: true,
+        );
+        expect(inheritedAddon.effectiveLinkedCategories, ['Desserts']);
+        expect(inheritedAddon.isApplicableToCategory('Desserts'), isTrue);
+        expect(inheritedAddon.isApplicableToCategory('Beverages'), isFalse);
+
+        // Legacy fallback for generic 'Addons' category
+        const legacyAddon = MenuItem(
+          id: 'addon_legacy',
+          name: 'Generic Extra',
+          price: 10.0,
+          category: 'Addons',
+          isAddon: true,
+        );
+        expect(legacyAddon.effectiveLinkedCategories, ['All']);
+        expect(legacyAddon.isApplicableToCategory('Anything'), isTrue);
+      });
+
+      test('MenuItem JSON serialization preserves linkedCategory', () {
+        const item = MenuItem(
+          id: 'item_1',
+          name: 'Ketchup',
+          price: 5.0,
+          category: 'Condiments',
+          isAddon: true,
+          linkedCategory: 'Snacks / Fast Food',
+        );
+
+        final json = item.toJson();
+        expect(json['linkedCategory'], 'Snacks / Fast Food');
+
+        final restored = MenuItem.fromJson(json);
+        expect(restored.linkedCategory, 'Snacks / Fast Food');
+        expect(restored.isApplicableToCategory('Snacks'), isTrue);
+        expect(restored.isApplicableToCategory('Fast Food'), isTrue);
+        expect(restored.isApplicableToCategory('Beverages'), isFalse);
+      });
+
+      test('OrderController queries and validates category-linked add-ons', () async {
+        final burger = MenuItem(
+          id: 'item_burger',
+          name: 'Veg Burger',
+          price: 80.0,
+          category: 'Fast Food',
+        );
+        final tea = MenuItem(
+          id: 'item_tea',
+          name: 'Masala Chai',
+          price: 20.0,
+          category: 'Beverages',
+        );
+        final cheese = MenuItem(
+          id: 'addon_cheese',
+          name: 'Extra Cheese',
+          price: 25.0,
+          category: 'Extras',
+          isAddon: true,
+          linkedCategory: 'Fast Food',
+        );
+        final ginger = MenuItem(
+          id: 'addon_ginger',
+          name: 'Ginger',
+          price: 5.0,
+          category: 'Extras',
+          isAddon: true,
+          linkedCategory: 'Beverages',
+        );
+
+        await controller.addMenuItem(burger);
+        await controller.addMenuItem(tea);
+        await controller.addMenuItem(cheese);
+        await controller.addMenuItem(ginger);
+
+        // getAddonsForCategory & hasAddonsForCategory
+        final fastFoodAddons = controller.getAddonsForCategory('Fast Food');
+        expect(fastFoodAddons.length, 1);
+        expect(fastFoodAddons.first.name, 'Extra Cheese');
+        expect(controller.hasAddonsForCategory('Fast Food'), isTrue);
+
+        final beverageAddons = controller.getAddonsForCategory('Beverages');
+        expect(beverageAddons.length, 1);
+        expect(beverageAddons.first.name, 'Ginger');
+        expect(controller.hasAddonsForCategory('Beverages'), isTrue);
+
+        expect(controller.getAddonsForCategory('Desserts'), isEmpty);
+        expect(controller.hasAddonsForCategory('Desserts'), isFalse);
+
+        // Add burger and tea to cart
+        controller.addToCart(burger);
+        controller.addToCart(tea);
+
+        // canAddAddonItem checks category compatibility
+        expect(controller.canAddAddonItem(burger.id, cheese), isTrue);
+        expect(controller.canAddAddonItem(burger.id, ginger), isFalse);
+        expect(controller.canAddAddonItem(tea.id, ginger), isTrue);
+        expect(controller.canAddAddonItem(tea.id, cheese), isFalse);
+
+        // canAddAnyAddon checks availability for that item's category
+        expect(controller.canAddAnyAddon(burger.id), isTrue);
+        expect(controller.canAddAnyAddon(tea.id), isTrue);
+
+        // addAddonToCart throws ArgumentError if cross-category
+        expect(
+          () => controller.addAddonToCart(targetCartItemId: burger.id, addon: ginger),
+          throwsA(isA<ArgumentError>()),
+        );
+        expect(
+          () => controller.addAddonToCart(targetCartItemId: tea.id, addon: cheese),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        // Successfully add matching add-ons
+        controller.addAddonToCart(targetCartItemId: burger.id, addon: cheese);
+        controller.addAddonToCart(targetCartItemId: tea.id, addon: ginger);
+
+        expect(controller.cart['item_burger+addon_cheese'], 1);
+        expect(controller.cart['item_tea+addon_ginger'], 1);
+      });
+    });
   });
 }

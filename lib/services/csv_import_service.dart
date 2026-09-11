@@ -105,6 +105,7 @@ Budget Delta,0,10,,true,0xFFDC2626''';
     int categoryIdx = 2;
     int colorIdx = -1;
     int addonIdx = -1;
+    int linkedCategoryIdx = -1;
     int startIndex = 0;
 
     final firstRow = rows.first.map((c) => c.toString().trim().toLowerCase()).toList();
@@ -124,6 +125,12 @@ Budget Delta,0,10,,true,0xFFDC2626''';
           colorIdx = i;
         } else if (col == 'is_addon' || col == 'addon' || col == 'isaddon' || col == 'add_on') {
           addonIdx = i;
+        } else if (col == 'linked_category' ||
+            col == 'linkedcategory' ||
+            col == 'target_category' ||
+            col == 'targetcategory' ||
+            col == 'applies_to') {
+          linkedCategoryIdx = i;
         }
       }
     } else {
@@ -149,6 +156,9 @@ Budget Delta,0,10,,true,0xFFDC2626''';
       var category = categoryIdx < row.length ? row[categoryIdx].toString().trim() : '';
       final rawColor = colorIdx != -1 && colorIdx < row.length ? row[colorIdx].toString().trim() : '';
       final rawAddon = addonIdx != -1 && addonIdx < row.length ? row[addonIdx].toString().trim().toLowerCase() : '';
+      final rawLinked = linkedCategoryIdx != -1 && linkedCategoryIdx < row.length
+          ? row[linkedCategoryIdx].toString().trim()
+          : '';
 
       if (name.isEmpty) {
         skippedCount++;
@@ -175,6 +185,7 @@ Budget Delta,0,10,,true,0xFFDC2626''';
           category.toLowerCase().contains('addon') ||
           category.toLowerCase().contains('add-on') ||
           category.toLowerCase() == 'extras';
+      final linkedCategory = rawLinked.isNotEmpty ? rawLinked : null;
 
       // Determine category color: if color is defined, use it; if not defined, assign a guaranteed unique, visually distinct color!
       final parsedColor = CategoryColorHelper.parseColor(rawColor);
@@ -203,6 +214,7 @@ Budget Delta,0,10,,true,0xFFDC2626''';
         category: category,
         colorHex: assignedColor,
         isAddon: isAddon,
+        linkedCategory: linkedCategory,
       ));
     }
 
@@ -228,7 +240,9 @@ Budget Delta,0,10,,true,0xFFDC2626''';
         c == 'color_hex' ||
         c == 'is_addon' ||
         c == 'addon' ||
-        c == 'add_on');
+        c == 'add_on' ||
+        c == 'linked_category' ||
+        c == 'target_category');
   }
 
   /// Parses CSV text content into a list of [CounterModel]s.

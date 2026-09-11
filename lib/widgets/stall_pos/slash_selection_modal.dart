@@ -125,6 +125,7 @@ class SlashSelectionModal {
     final categoryVariants = item.slashCategoryVariants;
     final baseItems = isAddon
         ? controller.cartBaseItems.where((b) {
+            if (!item.isApplicableToCategory(b.category)) return false;
             if (hasNameVariants) {
               return nameVariants.any((v) =>
                   controller.getAddonItemCount(b.id, item.id, resolvedAddonName: v) <
@@ -885,8 +886,7 @@ class AddonsForCartItemModal {
     VoidCallback? onUpdated,
   }) {
     final cartItem = controller.findItem(cartItemId);
-    final availableAddons =
-        controller.menu.where((m) => m.effectiveIsAddon).toList();
+    final availableAddons = controller.getAddonsForCategory(cartItem.category);
     if (availableAddons.isEmpty) return;
 
     if (!controller.canAddAnyAddon(cartItemId)) {

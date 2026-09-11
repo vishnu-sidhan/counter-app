@@ -22,12 +22,14 @@ class StallPosApp extends StatelessWidget {
   final CounterController controller;
   final ThemeController? themeController;
   final int initialIndex;
+  final List<Widget>? extraActions;
 
   const StallPosApp({
     super.key,
     required this.controller,
     this.themeController,
     this.initialIndex = 1,
+    this.extraActions,
   });
 
   @override
@@ -46,6 +48,7 @@ class StallPosApp extends StatelessWidget {
           home: MainNavigationScreen(
             controller: controller,
             initialIndex: initialIndex,
+            extraActions: extraActions,
           ),
         );
       },

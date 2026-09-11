@@ -26,6 +26,10 @@ class AddEditMenuItemDialog {
             ? controller.selectedCategory
             : 'General');
     final categoryCtrl = TextEditingController(text: selectedCat);
+    final linkedCategoryCtrl = TextEditingController(
+      text: existingItem?.linkedCategory ??
+          (existingItem?.isAddon == true ? existingItem?.category ?? '' : ''),
+    );
     int? selectedColorHex = existingItem?.colorHex;
     bool isAddon = existingItem?.isAddon ?? false;
 
@@ -88,9 +92,81 @@ class AddEditMenuItemDialog {
                     onChanged: (val) {
                       setDialogState(() {
                         isAddon = val;
+                        if (val && linkedCategoryCtrl.text.trim().isEmpty) {
+                          linkedCategoryCtrl.text = effectiveCategory;
+                        }
                       });
                     },
                   ),
+                  if (isAddon) ...[
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Link to Item Category',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'This add-on will only be available for items in this category.',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        ...existingCategories.map((cat) {
+                          final isCurrent = linkedCategoryCtrl.text.trim().toLowerCase() ==
+                              cat.trim().toLowerCase();
+                          final catColor = getCategoryColor(cat);
+                          return ChoiceChip(
+                            avatar: Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: catColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            label: Text(cat, style: const TextStyle(fontSize: 12)),
+                            selected: isCurrent,
+                            selectedColor: catColor.withAlpha(50),
+                            side: BorderSide(
+                              color: isCurrent ? catColor : Colors.grey.shade300,
+                              width: isCurrent ? 1.5 : 1.0,
+                            ),
+                            onSelected: (selected) {
+                              setDialogState(() {
+                                linkedCategoryCtrl.text = selected ? cat : '';
+                              });
+                            },
+                          );
+                        }),
+                        ChoiceChip(
+                          avatar: const Icon(Icons.all_inclusive, size: 12),
+                          label: const Text('All Categories', style: TextStyle(fontSize: 12)),
+                          selected: linkedCategoryCtrl.text.trim().toLowerCase() == 'all',
+                          onSelected: (selected) {
+                            setDialogState(() {
+                              linkedCategoryCtrl.text = selected ? 'All' : '';
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: linkedCategoryCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'Target Category / Categories',
+                        hintText: 'e.g. Beverages or Fast Food / Snacks',
+                        isDense: true,
+                      ),
+                      onChanged: (_) => setDialogState(() {}),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   const Text(
                     'Category',
@@ -265,6 +341,12 @@ class AddEditMenuItemDialog {
                         usedColors: resolvedCategoryColors.values.toSet(),
                       );
 
+                  final effectiveLinkedCategory = isAddon
+                      ? (linkedCategoryCtrl.text.trim().isNotEmpty
+                          ? linkedCategoryCtrl.text.trim()
+                          : category)
+                      : null;
+
                   if (name.isNotEmpty && price > 0) {
                     if (isEditing) {
                       controller.updateMenuItem(
@@ -274,6 +356,8 @@ class AddEditMenuItemDialog {
                           category: category,
                           colorHex: resolvedColor,
                           isAddon: isAddon,
+                          linkedCategory: effectiveLinkedCategory,
+                          clearLinkedCategory: !isAddon,
                         ),
                       );
                     } else {
@@ -285,6 +369,7 @@ class AddEditMenuItemDialog {
                           category: category,
                           colorHex: resolvedColor,
                           isAddon: isAddon,
+                          linkedCategory: effectiveLinkedCategory,
                         ),
                       );
                     }

@@ -215,5 +215,37 @@ void main() {
 
       expect(find.byType(RemoteStorageConfigDialog), findsNothing);
     });
+
+    testWidgets(
+        'StorageConnectionButton renders compact badge on mobile without overflow and opens dialog',
+        (tester) async {
+      tester.view.physicalSize = const Size(375, 812);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      await tester.pumpWidget(
+        const ExampleHostApp(
+          initialConfig: RemoteStorageConfig(
+            isRemoteEnabled: true,
+            baseUrl: 'https://api.stallpos.example.com',
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // On mobile (width 375), StorageConnectionButton renders compact badge
+      expect(find.byType(StorageConnectionButton), findsOneWidget);
+      final storageButton = find.byTooltip('Storage Configuration');
+      expect(storageButton, findsOneWidget);
+
+      // Tap storage button to open dialog
+      await tester.tap(storageButton);
+      await tester.pumpAndSettle();
+
+      expect(find.byType(RemoteStorageConfigDialog), findsOneWidget);
+      expect(find.text('https://api.stallpos.example.com'), findsOneWidget);
+    });
   });
 }
+

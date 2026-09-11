@@ -9,6 +9,7 @@ class MenuItem {
   final String category;
   final int? colorHex;
   final bool isAddon;
+  final String? linkedCategory;
 
   const MenuItem({
     required this.id,
@@ -17,6 +18,7 @@ class MenuItem {
     this.category = 'General',
     this.colorHex,
     this.isAddon = false,
+    this.linkedCategory,
   });
 
   /// Check if this item qualifies as an add-on either via explicit flag
@@ -25,6 +27,44 @@ class MenuItem {
     if (isAddon) return true;
     final cat = category.toLowerCase();
     return cat.contains('addon') || cat.contains('add-on') || cat == 'extras' || cat == 'extra';
+  }
+
+  /// List of target categories this add-on can be linked to.
+  /// If [linkedCategory] is explicitly provided, it is parsed (supporting '/' separation).
+  /// Otherwise, if [category] does not contain an add-on keyword, it defaults to [slashCategoryVariants].
+  /// Defaults to ['All'] for legacy unlinked add-ons.
+  List<String> get effectiveLinkedCategories {
+    if (linkedCategory != null && linkedCategory!.trim().isNotEmpty) {
+      return linkedCategory!
+          .split('/')
+          .map((s) => s.trim())
+          .where((s) => s.isNotEmpty)
+          .toList();
+    }
+    final cat = category.toLowerCase().trim();
+    if (!cat.contains('addon') &&
+        !cat.contains('add-on') &&
+        cat != 'extras' &&
+        cat != 'extra') {
+      return slashCategoryVariants;
+    }
+    return const ['All'];
+  }
+
+  /// Whether this add-on can be attached to items of [targetItemCategory].
+  bool isApplicableToCategory(String targetItemCategory) {
+    if (!effectiveIsAddon) return false;
+    final targetVariants = targetItemCategory
+        .split('/')
+        .map((s) => s.trim().toLowerCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    for (final linked in effectiveLinkedCategories) {
+      final l = linked.trim().toLowerCase();
+      if (l == 'all' || l == '*') return true;
+      if (targetVariants.contains(l)) return true;
+    }
+    return false;
   }
 
   /// Centralized display name showing item name and category in brackets:
@@ -78,6 +118,8 @@ class MenuItem {
     int? colorHex,
     bool clearColor = false,
     bool? isAddon,
+    String? linkedCategory,
+    bool clearLinkedCategory = false,
   }) {
     return MenuItem(
       id: id ?? this.id,
@@ -86,6 +128,9 @@ class MenuItem {
       category: category ?? this.category,
       colorHex: clearColor ? null : (colorHex ?? this.colorHex),
       isAddon: isAddon ?? this.isAddon,
+      linkedCategory: clearLinkedCategory
+          ? null
+          : (linkedCategory ?? this.linkedCategory),
     );
   }
 
@@ -96,6 +141,8 @@ class MenuItem {
         'category': category,
         if (colorHex != null) 'colorHex': colorHex,
         if (isAddon) 'isAddon': isAddon,
+        if (linkedCategory != null && linkedCategory!.trim().isNotEmpty)
+          'linkedCategory': linkedCategory,
       };
 
   factory MenuItem.fromJson(Map<String, dynamic> map) {
@@ -106,6 +153,12 @@ class MenuItem {
         ? (map['colorHex'] as num?)?.toInt()
         : CategoryColorHelper.parseColor(map['color']);
     final isAddonExplicit = map['isAddon'] == true;
+    final linkedCategoryRaw = map['linkedCategory']?.toString().trim() ??
+        map['targetCategory']?.toString().trim() ??
+        map['linked_category']?.toString().trim();
+    final linkedCategory = (linkedCategoryRaw != null && linkedCategoryRaw.isNotEmpty)
+        ? linkedCategoryRaw
+        : null;
     return MenuItem(
       id: map['id']?.toString() ?? '',
       name: map['name']?.toString() ?? '',
@@ -113,6 +166,7 @@ class MenuItem {
       category: category,
       colorHex: parsedColor ?? CategoryColorHelper.getColorForCategory(category),
       isAddon: isAddonExplicit,
+      linkedCategory: linkedCategory,
     );
   }
 }

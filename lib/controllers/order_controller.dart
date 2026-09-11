@@ -153,13 +153,31 @@ class OrderController extends ChangeNotifier {
     return count;
   }
 
-  /// Checks if the specified add-on can be added to the cart item without exceeding maxPerAddonItem.
+  /// Returns all menu add-ons applicable to the given [category].
+  List<MenuItem> getAddonsForCategory(String category) {
+    return _menu
+        .where((m) => m.effectiveIsAddon && m.isApplicableToCategory(category))
+        .toList();
+  }
+
+  /// Whether there are any add-ons available for the given [category].
+  bool hasAddonsForCategory(String category) {
+    return _menu
+        .any((m) => m.effectiveIsAddon && m.isApplicableToCategory(category));
+  }
+
+  /// Checks if the specified add-on can be added to the cart item without exceeding maxPerAddonItem
+  /// and verifying that it is applicable to the target item's category.
   bool canAddAddonItem(
     String cartItemId,
     MenuItem addon, {
     String? resolvedAddonName,
     int countToAdd = 1,
   }) {
+    final targetItem = findItem(cartItemId);
+    if (!addon.isApplicableToCategory(targetItem.category)) {
+      return false;
+    }
     final current = getAddonItemCount(
       cartItemId,
       addon.id,
@@ -168,9 +186,10 @@ class OrderController extends ChangeNotifier {
     return current + countToAdd <= maxPerAddonItem;
   }
 
-  /// Checks if any available add-on in the menu can still be added to the cart item.
+  /// Checks if any available add-on for the cart item's category can still be added to the cart item.
   bool canAddAnyAddon(String cartItemId) {
-    final availableAddons = _menu.where((m) => m.effectiveIsAddon).toList();
+    final targetItem = findItem(cartItemId);
+    final availableAddons = getAddonsForCategory(targetItem.category);
     if (availableAddons.isEmpty) return false;
 
     for (final addon in availableAddons) {
@@ -659,6 +678,13 @@ class OrderController extends ChangeNotifier {
       );
     }
 
+    final targetItem = findItem(targetCartItemId);
+    if (!addon.isApplicableToCategory(targetItem.category)) {
+      throw ArgumentError(
+        'Add-on [${addon.name}] is linked to [${addon.effectiveLinkedCategories.join(', ')}] and cannot be added to [${targetItem.name}] (${targetItem.category}).',
+      );
+    }
+
     final currentAddonCount = getAddonItemCount(
       targetCartItemId,
       addon.id,
@@ -711,7 +737,13 @@ class OrderController extends ChangeNotifier {
       );
     }
 
+    final targetItem = findItem(targetCartItemId);
     for (final item in validAddons) {
+      if (!item.addon.isApplicableToCategory(targetItem.category)) {
+        throw ArgumentError(
+          'Add-on [${item.addon.name}] is linked to [${item.addon.effectiveLinkedCategories.join(', ')}] and cannot be added to [${targetItem.name}] (${targetItem.category}).',
+        );
+      }
       final currentAddonCount = getAddonItemCount(
         targetCartItemId,
         item.addon.id,

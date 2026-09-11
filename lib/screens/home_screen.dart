@@ -12,10 +12,12 @@ import 'history_screen.dart';
 /// Main screen displaying the list of counters, search/sort filters, and creation actions.
 class HomeScreen extends StatelessWidget {
   final CounterController controller;
+  final List<Widget>? extraActions;
 
   const HomeScreen({
     super.key,
     required this.controller,
+    this.extraActions,
   });
 
   void _openAddSheet(BuildContext context) {
@@ -195,6 +197,7 @@ class HomeScreen extends StatelessWidget {
           appBar: AppBar(
             title: const Text('Counters'),
             actions: [
+              if (extraActions != null) ...extraActions!,
               IconButton(
                 icon: const Icon(Icons.history_rounded),
                 tooltip: 'Activity History',
