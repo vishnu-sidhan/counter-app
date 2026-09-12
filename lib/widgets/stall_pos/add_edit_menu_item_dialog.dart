@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../controllers/order_controller.dart';
 import '../../data/models/stall_models.dart';
 import '../../theme/category_colors.dart';
+import 'category_config_dialog.dart';
 
 /// Modal dialog for adding or editing menu items.
 class AddEditMenuItemDialog {
@@ -17,6 +18,9 @@ class AddEditMenuItemDialog {
   }) {
     final isEditing = existingItem != null;
     final nameCtrl = TextEditingController(text: existingItem?.name ?? '');
+    final displayNameCtrl = TextEditingController(
+      text: existingItem?.customDisplayName ?? '',
+    );
     final priceCtrl = TextEditingController(
       text: existingItem != null ? existingItem.price.toStringAsFixed(0) : '',
     );
@@ -75,6 +79,17 @@ class AddEditMenuItemDialog {
                       labelText: 'Price (₹) *',
                       hintText: 'e.g. 50',
                       prefixText: '₹ ',
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: displayNameCtrl,
+                    textCapitalization: TextCapitalization.words,
+                    decoration: const InputDecoration(
+                      labelText: 'Display Name (Optional)',
+                      hintText: 'e.g. Momos, Chai',
+                      helperText:
+                          'Short clean name for POS buttons & tickets. Defaults to Item Name.',
                     ),
                   ),
                   const SizedBox(height: 12),
@@ -168,9 +183,36 @@ class AddEditMenuItemDialog {
                     ),
                   ],
                   const SizedBox(height: 12),
-                  const Text(
-                    'Category',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Category',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                      ),
+                      InkWell(
+                        onTap: () async {
+                          final currentCat = categoryCtrl.text.trim().isNotEmpty
+                              ? categoryCtrl.text.trim()
+                              : 'General';
+                          await CategoryConfigDialog.show(
+                            context,
+                            categoryName: currentCat,
+                            controller: controller,
+                            getCategoryColor: getCategoryColor,
+                          );
+                          setDialogState(() {});
+                        },
+                        child: Text(
+                          'Configure Surcharge',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(ctx).colorScheme.primary,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 6),
                   Wrap(
@@ -181,6 +223,10 @@ class AddEditMenuItemDialog {
                           categoryCtrl.text.trim().toLowerCase() ==
                           cat.trim().toLowerCase();
                       final catColor = getCategoryColor(cat);
+                      final catCost = controller.getCategoryCost(cat);
+                      final labelText = catCost > 0
+                          ? '$cat (+₹${catCost.toStringAsFixed(0)})'
+                          : cat;
                       return ChoiceChip(
                         avatar: Container(
                           width: 8,
@@ -190,7 +236,7 @@ class AddEditMenuItemDialog {
                             shape: BoxShape.circle,
                           ),
                         ),
-                        label: Text(cat, style: const TextStyle(fontSize: 12)),
+                        label: Text(labelText, style: const TextStyle(fontSize: 12)),
                         selected: isCurrent,
                         selectedColor: catColor.withAlpha(50),
                         side: BorderSide(
@@ -346,12 +392,17 @@ class AddEditMenuItemDialog {
                           ? linkedCategoryCtrl.text.trim()
                           : category)
                       : null;
+                  final customDisplayName = displayNameCtrl.text.trim().isNotEmpty
+                      ? displayNameCtrl.text.trim()
+                      : null;
 
                   if (name.isNotEmpty && price > 0) {
                     if (isEditing) {
                       controller.updateMenuItem(
                         existingItem.copyWith(
                           name: name,
+                          displayName: customDisplayName,
+                          clearDisplayName: customDisplayName == null,
                           price: price,
                           category: category,
                           colorHex: resolvedColor,
@@ -365,6 +416,7 @@ class AddEditMenuItemDialog {
                         MenuItem(
                           id: DateTime.now().millisecondsSinceEpoch.toString(),
                           name: name,
+                          displayName: customDisplayName,
                           price: price,
                           category: category,
                           colorHex: resolvedColor,

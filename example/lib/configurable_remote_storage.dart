@@ -338,4 +338,24 @@ class ConfigurableRemoteStorage implements StallStorage {
       debugPrint('ConfigurableRemoteStorage: clearAllOrders failed - $e');
     }
   }
+
+  List<ItemCategory>? _cachedCategories;
+
+  @override
+  Future<List<ItemCategory>> loadCategories() async {
+    if (_cachedCategories != null) return _cachedCategories!;
+    if (enableOfflineCache) {
+      _cachedCategories = await fallbackStorage.loadCategories();
+      return _cachedCategories!;
+    }
+    return [];
+  }
+
+  @override
+  Future<void> saveCategories(List<ItemCategory> categories) async {
+    _cachedCategories = List.from(categories);
+    if (enableOfflineCache) {
+      await fallbackStorage.saveCategories(categories);
+    }
+  }
 }

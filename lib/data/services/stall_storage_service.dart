@@ -8,6 +8,7 @@ class StallStorageService implements StallStorage {
   static const String _menuKey = 'stall_menu';
   static const String _ordersKey = 'stall_orders';
   static const String _tokenKey = 'stall_next_token';
+  static const String _categoriesKey = 'stall_categories';
 
   final SharedPreferences? _prefs;
 
@@ -173,5 +174,32 @@ class StallStorageService implements StallStorage {
     if (resetToken) {
       await prefs.setInt(_tokenKey, 1);
     }
+  }
+
+  /// Loads category configurations and additional costs.
+  @override
+  Future<List<ItemCategory>> loadCategories() async {
+    final prefs = await _getPrefs();
+    final raw = prefs.getString(_categoriesKey);
+    if (raw == null) return [];
+
+    try {
+      final List decoded = jsonDecode(raw) as List;
+      return decoded
+          .map((e) => ItemCategory.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Saves category configurations.
+  @override
+  Future<void> saveCategories(List<ItemCategory> categories) async {
+    final prefs = await _getPrefs();
+    await prefs.setString(
+      _categoriesKey,
+      jsonEncode(categories.map((e) => e.toJson()).toList()),
+    );
   }
 }

@@ -9,14 +9,17 @@ class InMemoryStallStorage implements StallStorage {
   List<MenuItem> _menu = [];
   List<StallOrder> _orders = [];
   final List<StallOrder> _archivedOrders = [];
+  List<ItemCategory> _categories = [];
   int _nextToken = 1;
 
   InMemoryStallStorage({
     List<MenuItem>? initialMenu,
     List<StallOrder>? initialOrders,
+    List<ItemCategory>? initialCategories,
     int initialToken = 1,
   })  : _menu = initialMenu != null ? List.from(initialMenu) : [],
         _orders = initialOrders != null ? List.from(initialOrders) : [],
+        _categories = initialCategories != null ? List.from(initialCategories) : [],
         _nextToken = initialToken;
 
   @override
@@ -97,6 +100,15 @@ class InMemoryStallStorage implements StallStorage {
     if (resetToken) {
       _nextToken = 1;
     }
+  }
+
+  @override
+  Future<List<ItemCategory>> loadCategories() async =>
+      List.unmodifiable(_categories);
+
+  @override
+  Future<void> saveCategories(List<ItemCategory> categories) async {
+    _categories = List.from(categories);
   }
 }
 

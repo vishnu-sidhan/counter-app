@@ -210,63 +210,85 @@ class CartBottomSheet {
                                               width: 0.8,
                                             ),
                                           ),
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Row(
-                                                mainAxisSize: MainAxisSize.min,
+                                          child: Builder(
+                                            builder: (_) {
+                                              final splitParts = <String>[
+                                                'Item ₹${breakdown.basePrice.toStringAsFixed(0)}',
+                                              ];
+                                              if (breakdown.hasCategoryCost) {
+                                                final reason = breakdown.categoryCostReason != null &&
+                                                        breakdown.categoryCostReason!.isNotEmpty
+                                                    ? breakdown.categoryCostReason!
+                                                    : 'Packaging';
+                                                splitParts.add(
+                                                  '$reason ₹${breakdown.categoryAdditionalCost.toStringAsFixed(0)}',
+                                                );
+                                              }
+                                              if (breakdown.hasAddons) {
+                                                final s = breakdown.addonDetails.length > 1 ||
+                                                        breakdown.addonDetails.any((d) => d.count > 1)
+                                                    ? 's'
+                                                    : '';
+                                                splitParts.add(
+                                                  'Add-on$s ₹${breakdown.addonsPrice.toStringAsFixed(0)}',
+                                                );
+                                              }
+
+                                              return Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
                                                 children: [
-                                                  Icon(
-                                                    Icons.call_split_rounded,
-                                                    size: 12,
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .primary,
+                                                  Row(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Icon(
+                                                        Icons.call_split_rounded,
+                                                        size: 12,
+                                                        color: Theme.of(context).colorScheme.primary,
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        'Split: ${splitParts.join(' + ')}',
+                                                        style: TextStyle(
+                                                          fontSize: 11,
+                                                          fontWeight: FontWeight.bold,
+                                                          color: Theme.of(context).colorScheme.primary,
+                                                        ),
+                                                      ),
+                                                    ],
                                                   ),
-                                                  const SizedBox(width: 4),
-                                                  Text(
-                                                    'Split: Item ₹${breakdown.basePrice.toStringAsFixed(0)} + Add-on${breakdown.addonDetails.length > 1 || breakdown.addonDetails.any((d) => d.count > 1) ? "s" : ""} ₹${breakdown.addonsPrice.toStringAsFixed(0)}',
-                                                    style: TextStyle(
-                                                      fontSize: 11,
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Theme.of(context)
-                                                          .colorScheme
-                                                          .primary,
+                                                  if (breakdown.addonDetails.isNotEmpty) ...[
+                                                    const SizedBox(height: 1),
+                                                    Text(
+                                                      breakdown.addonDetails.map((d) {
+                                                        final prefix = d.count > 1 ? '${d.count}x ' : '';
+                                                        return '$prefix${d.name} (+₹${d.totalPrice.toStringAsFixed(0)})';
+                                                      }).join(', '),
+                                                      style: TextStyle(
+                                                        fontSize: 10.5,
+                                                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                                      ),
                                                     ),
-                                                  ),
+                                                  ],
+                                                  if (qty > 1) ...[
+                                                    const SizedBox(height: 2),
+                                                    Text(
+                                                      'Total ($qty qty): ${[
+                                                        'Item ₹${(breakdown.basePrice * qty).toStringAsFixed(0)}',
+                                                        if (breakdown.hasCategoryCost)
+                                                          'Category ₹${(breakdown.categoryAdditionalCost * qty).toStringAsFixed(0)}',
+                                                        if (breakdown.hasAddons)
+                                                          'Add-ons ₹${(breakdown.addonsPrice * qty).toStringAsFixed(0)}',
+                                                      ].join(' + ')}',
+                                                      style: TextStyle(
+                                                        fontSize: 10,
+                                                        fontWeight: FontWeight.w500,
+                                                        color: Theme.of(context).colorScheme.outline,
+                                                      ),
+                                                    ),
+                                                  ],
                                                 ],
-                                              ),
-                                              if (breakdown.addonDetails.isNotEmpty) ...[
-                                                const SizedBox(height: 1),
-                                                Text(
-                                                  breakdown.addonDetails.map((d) {
-                                                    final prefix = d.count > 1 ? '${d.count}x ' : '';
-                                                    return '$prefix${d.name} (+₹${d.totalPrice.toStringAsFixed(0)})';
-                                                  }).join(', '),
-                                                  style: TextStyle(
-                                                    fontSize: 10.5,
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .onSurfaceVariant,
-                                                  ),
-                                                ),
-                                              ],
-                                              if (qty > 1) ...[
-                                                const SizedBox(height: 2),
-                                                Text(
-                                                  'Total ($qty qty): Item ₹${(breakdown.basePrice * qty).toStringAsFixed(0)} + Add-ons ₹${(breakdown.addonsPrice * qty).toStringAsFixed(0)}',
-                                                  style: TextStyle(
-                                                    fontSize: 10,
-                                                    fontWeight: FontWeight.w500,
-                                                    color: Theme.of(context)
-                                                        .colorScheme
-                                                        .outline,
-                                                  ),
-                                                ),
-                                              ],
-                                            ],
+                                              );
+                                            },
                                           ),
                                         ),
                                       ],
@@ -434,7 +456,7 @@ class CartBottomSheet {
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           children: [
-                            if (controller.cartAddonsTotal > 0) ...[
+                            if (controller.cartAddonsTotal > 0 || controller.cartCategoryCostsTotal > 0) ...[
                               Row(
                                 mainAxisAlignment:
                                     MainAxisAlignment.spaceBetween,
@@ -460,32 +482,60 @@ class CartBottomSheet {
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text(
-                                    'Add-ons Subtotal',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.onSurfaceVariant,
+                              if (controller.cartCategoryCostsTotal > 0) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Category Additional Costs',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    '+₹${controller.cartAddonsTotal.toStringAsFixed(0)}',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w600,
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
+                                    Text(
+                                      '+₹${controller.cartCategoryCostsTotal.toStringAsFixed(0)}',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.deepOrange.shade800,
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              ),
+                                  ],
+                                ),
+                              ],
+                              if (controller.cartAddonsTotal > 0) ...[
+                                const SizedBox(height: 4),
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      'Add-ons Subtotal',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
+                                    Text(
+                                      '+₹${controller.cartAddonsTotal.toStringAsFixed(0)}',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
                               const SizedBox(height: 8),
                               const Divider(height: 1),
                               const SizedBox(height: 8),

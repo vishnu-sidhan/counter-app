@@ -10,6 +10,8 @@ class CategoryAccordionCard extends StatelessWidget {
   final VoidCallback onToggle;
   final Color Function(String category) getCategoryColor;
   final Widget Function(MenuItem item) itemCardBuilder;
+  final String? costDescription;
+  final VoidCallback? onConfigure;
 
   const CategoryAccordionCard({
     super.key,
@@ -19,6 +21,8 @@ class CategoryAccordionCard extends StatelessWidget {
     required this.onToggle,
     required this.getCategoryColor,
     required this.itemCardBuilder,
+    this.costDescription,
+    this.onConfigure,
   });
 
   @override
@@ -56,7 +60,7 @@ class CategoryAccordionCard extends StatelessWidget {
                 children: [
                   Container(
                     width: 6,
-                    height: 24,
+                    height: (costDescription != null && costDescription!.trim().isNotEmpty) ? 38 : 24,
                     decoration: BoxDecoration(
                       color: catColor,
                       borderRadius: BorderRadius.circular(3),
@@ -64,17 +68,50 @@ class CategoryAccordionCard extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: Text(
-                      catName,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.2,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          catName,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 0.2,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (costDescription != null && costDescription!.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.deepOrange.withAlpha(25),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: Colors.deepOrange.withAlpha(100),
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Text(
+                              costDescription!.trim(),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.deepOrange.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -108,7 +145,22 @@ class CategoryAccordionCard extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const SizedBox(width: 6),
+                  if (onConfigure != null) ...[
+                    const SizedBox(width: 6),
+                    IconButton(
+                      icon: const Icon(Icons.tune_rounded, size: 20),
+                      tooltip: 'Configure Category & Options',
+                      visualDensity: VisualDensity.compact,
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      color: Theme.of(context).colorScheme.primary,
+                      onPressed: onConfigure,
+                    ),
+                  ],
+                  const SizedBox(width: 4),
                   AnimatedRotation(
                     turns: isExpanded ? 0.0 : -0.25,
                     duration: const Duration(milliseconds: 200),

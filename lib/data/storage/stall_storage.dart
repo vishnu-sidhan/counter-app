@@ -38,4 +38,10 @@ abstract class StallStorage {
 
   /// Clears all order history and optionally resets the token sequence.
   Future<void> clearAllOrders({bool resetToken = false});
+
+  /// Loads category configurations and additional costs.
+  Future<List<ItemCategory>> loadCategories() async => const [];
+
+  /// Persists category configurations.
+  Future<void> saveCategories(List<ItemCategory> categories) async {}
 }

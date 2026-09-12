@@ -692,7 +692,13 @@ class _StallPosScreenState extends State<StallPosScreen>
     );
   }
 
-
+  void _openManageCategoriesDialog() {
+    ManageCategoriesDialog.show(
+      context,
+      controller: _controller,
+      getCategoryColor: _getCategoryColor,
+    );
+  }
 
   void _openOrderHistory() async {
     await Navigator.of(context).push(
@@ -794,6 +800,14 @@ class _StallPosScreenState extends State<StallPosScreen>
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
             onPressed: () => _showAddOrEditItemDialog(),
+          ),
+          IconButton(
+            icon: const Icon(Icons.tune_rounded),
+            tooltip: 'Category Surcharges & Settings',
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            onPressed: _openManageCategoriesDialog,
           ),
           ListenableBuilder(
             listenable: ThemeController.instance,
@@ -916,10 +930,19 @@ class _StallPosScreenState extends State<StallPosScreen>
   }
 
   Widget _buildCategoryAccordionCard(String category, List<MenuItem> items) {
+    final catConfig = _controller.getCategoryConfig(category);
+
     return CategoryAccordionCard(
       catName: category,
       items: items,
       isExpanded: !_collapsedCategories.contains(category),
+      costDescription: catConfig?.costDescription,
+      onConfigure: () => CategoryConfigDialog.show(
+        context,
+        categoryName: category,
+        controller: _controller,
+        getCategoryColor: _getCategoryColor,
+      ),
       onToggle: () {
         setState(() {
           if (_collapsedCategories.contains(category)) {
@@ -951,44 +974,85 @@ class _StallPosScreenState extends State<StallPosScreen>
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             child: ListView.separated(
               scrollDirection: Axis.horizontal,
-              itemCount: categories.length,
+              itemCount: categories.length + 1,
               separatorBuilder: (context, index) => const SizedBox(width: 8),
               itemBuilder: (context, i) {
+                if (i == categories.length) {
+                  return ActionChip(
+                    avatar: Icon(
+                      Icons.tune_rounded,
+                      size: 16,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    label: const Text(
+                      'Manage Categories',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    tooltip: 'Manage Category Options & Surcharges',
+                    onPressed: _openManageCategoriesDialog,
+                  );
+                }
+
                 final cat = categories[i];
                 final isSelected = _controller.selectedCategory == cat;
                 final catColor = _getCategoryColor(cat);
-                return ChoiceChip(
-                  avatar: cat == 'All'
-                      ? null
-                      : Container(
-                          width: 10,
-                          height: 10,
-                          decoration: BoxDecoration(
-                            color: catColor,
-                            shape: BoxShape.circle,
-                          ),
+                final catConfig = _controller.getCategoryConfig(cat);
+                final hasCost = catConfig?.hasAdditionalCost == true;
+
+                return Tooltip(
+                  message: cat == 'All'
+                      ? 'Show all items'
+                      : (hasCost
+                          ? '$cat • ${catConfig!.costDescription} (Long press to edit)'
+                          : '$cat (Long press to edit surcharge)'),
+                  child: GestureDetector(
+                    onLongPress: cat == 'All'
+                        ? null
+                        : () => CategoryConfigDialog.show(
+                              context,
+                              categoryName: cat,
+                              controller: _controller,
+                              getCategoryColor: _getCategoryColor,
+                            ),
+                    child: ChoiceChip(
+                      avatar: cat == 'All'
+                          ? null
+                          : Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: catColor,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                      label: Text(
+                        hasCost
+                            ? '$cat (+₹${catConfig!.additionalCost.toStringAsFixed(catConfig.additionalCost.truncateToDouble() == catConfig.additionalCost ? 0 : 2)})'
+                            : cat,
+                        style: TextStyle(
+                          fontWeight: isSelected
+                              ? FontWeight.bold
+                              : FontWeight.w600,
+                          fontSize: 14,
+                          color: isSelected ? catColor : null,
                         ),
-                  label: Text(
-                    cat,
-                    style: TextStyle(
-                      fontWeight: isSelected
-                          ? FontWeight.bold
-                          : FontWeight.w600,
-                      fontSize: 15,
-                      color: isSelected ? catColor : null,
+                      ),
+                      selected: isSelected,
+                      selectedColor: catColor.withAlpha(45),
+                      side: BorderSide(
+                        color: isSelected ? catColor : catColor.withAlpha(90),
+                        width: isSelected ? 1.8 : 1,
+                      ),
+                      onSelected: (selected) {
+                        if (selected) {
+                          _controller.selectCategory(cat);
+                        }
+                      },
                     ),
                   ),
-                  selected: isSelected,
-                  selectedColor: catColor.withAlpha(45),
-                  side: BorderSide(
-                    color: isSelected ? catColor : catColor.withAlpha(90),
-                    width: isSelected ? 1.8 : 1,
-                  ),
-                  onSelected: (selected) {
-                    if (selected) {
-                      _controller.selectCategory(cat);
-                    }
-                  },
                 );
               },
             ),

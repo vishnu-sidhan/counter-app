@@ -572,16 +572,30 @@ class SlashSelectionModal {
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(
-                                            child: Text(
-                                              cat,
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w600,
-                                                fontSize: 16,
-                                              ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  cat,
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.w600,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                                if (controller.getCategoryCost(cat) > 0)
+                                                  Text(
+                                                    '+₹${controller.getCategoryCost(cat).toStringAsFixed(0)} ${controller.getCategoryCostReason(cat) ?? 'extra'}',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.deepOrange.shade700,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                              ],
                                             ),
                                           ),
                                           Text(
-                                            '₹${item.price.toStringAsFixed(0)}',
+                                            '₹${(item.price + controller.getCategoryCost(cat)).toStringAsFixed(0)}',
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 14,
@@ -766,12 +780,34 @@ class SlashSelectionModal {
                                           ),
                                           const SizedBox(width: 12),
                                           Expanded(
-                                            child: Text(
-                                              cat,
-                                              style: TextStyle(
-                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                                fontSize: 15,
-                                              ),
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  cat,
+                                                  style: TextStyle(
+                                                    fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                                    fontSize: 15,
+                                                  ),
+                                                ),
+                                                if (controller.getCategoryCost(cat) > 0)
+                                                  Text(
+                                                    '+₹${controller.getCategoryCost(cat).toStringAsFixed(0)} ${controller.getCategoryCostReason(cat) ?? 'extra'}',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      color: Colors.deepOrange.shade700,
+                                                      fontWeight: FontWeight.bold,
+                                                    ),
+                                                  ),
+                                              ],
+                                            ),
+                                          ),
+                                          Text(
+                                            '₹${(item.price + controller.getCategoryCost(cat)).toStringAsFixed(0)}',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                              color: itemColor,
                                             ),
                                           ),
                                         ],
@@ -807,7 +843,7 @@ class SlashSelectionModal {
                           ),
                         ),
                         child: Text(
-                          'Add $selectedName ($selectedCategory) • ₹${item.price.toStringAsFixed(0)}',
+                          'Add $selectedName ($selectedCategory) • ₹${(item.price + controller.getCategoryCost(selectedCategory)).toStringAsFixed(0)}',
                           style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                         ),
                       ),

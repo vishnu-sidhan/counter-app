@@ -11,6 +11,7 @@ class OrderController extends ChangeNotifier {
 
   List<MenuItem> _menu = [];
   List<StallOrder> _orders = [];
+  List<ItemCategory> _categoryConfigs = [];
   final Map<String, int> _cart = {}; // menuItem.id -> quantity
   int _nextToken = 1;
   int? _editingOrderId;
@@ -27,12 +28,104 @@ class OrderController extends ChangeNotifier {
   bool get isLoading => _isLoading;
   List<MenuItem> get menu => List.unmodifiable(_menu);
   List<StallOrder> get orders => List.unmodifiable(_orders);
+  List<ItemCategory> get categoryConfigs => List.unmodifiable(_categoryConfigs);
   Map<String, int> get cart => Map.unmodifiable(_cart);
   int get nextToken => _nextToken;
   int? get editingOrderId => _editingOrderId;
   bool get isEditing => _editingOrderId != null;
   String get selectedCategory => _selectedCategory;
   StallStorage get storageService => _storageService;
+
+  /// Normalizes category key by trimming segments around '/' slashes to prevent whitespace discrepancies
+  /// (e.g. 'Momos /  Fried Momos' -> 'momos / fried momos').
+  static String normalizeCategoryKey(String cat) {
+    final trimmed = cat.trim().toLowerCase();
+    if (trimmed.isEmpty) return '';
+    if (!trimmed.contains('/')) return trimmed;
+    return trimmed
+        .split('/')
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .join(' / ');
+  }
+
+  /// Fast lookup map for category configs keyed by lowercase trimmed category name
+  /// as well as slash-normalized category key.
+  Map<String, ItemCategory> get categoryConfigMap {
+    final map = <String, ItemCategory>{};
+    for (final c in _categoryConfigs) {
+      final rawKey = c.name.trim().toLowerCase();
+      final normKey = normalizeCategoryKey(c.name);
+      map[rawKey] = c;
+      if (normKey.isNotEmpty && normKey != rawKey) {
+        map[normKey] = c;
+      }
+    }
+    return map;
+  }
+
+  /// Helper to lookup an ItemCategory config by either its exact or normalized name.
+  ItemCategory? getCategoryConfig(String category) {
+    final trimmed = category.trim().toLowerCase();
+    if (trimmed.isEmpty || trimmed == 'all') return null;
+    final norm = normalizeCategoryKey(category);
+    return categoryConfigMap[norm] ?? categoryConfigMap[trimmed];
+  }
+
+  /// Returns the additional cost configured for the given [category].
+  /// Returns 0.0 if not configured, disabled, or <= 0.
+  double getCategoryCost(String category) {
+    final trimmed = category.trim().toLowerCase();
+    if (trimmed.isEmpty || trimmed == 'all') return 0.0;
+    final config = getCategoryConfig(category);
+    if (config != null && config.isEnabled) {
+      if (config.additionalCost > 0) {
+        return config.additionalCost;
+      }
+    }
+    // Also check if [category] is an option/variant under any category config
+    for (final parent in _categoryConfigs) {
+      if (!parent.isEnabled) continue;
+      for (final opt in parent.effectiveOptions) {
+        if (opt.isEnabled && opt.name.trim().toLowerCase() == trimmed) {
+          if (opt.additionalCost > 0) return opt.additionalCost;
+        }
+      }
+    }
+    return 0.0;
+  }
+
+  /// Returns the label / reason for the category surcharge (e.g. "Packaging Fee" or "Fried").
+  String? getCategoryCostReason(String category) {
+    final trimmed = category.trim().toLowerCase();
+    if (trimmed.isEmpty || trimmed == 'all') return null;
+    final config = getCategoryConfig(category);
+    if (config != null && config.isEnabled && config.additionalCost > 0) {
+      return config.costReason;
+    }
+    for (final parent in _categoryConfigs) {
+      if (!parent.isEnabled) continue;
+      for (final opt in parent.effectiveOptions) {
+        if (opt.isEnabled && opt.name.trim().toLowerCase() == trimmed && opt.additionalCost > 0) {
+          return opt.name;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// Resolves the additional cost for an option under a parent category
+  /// (e.g., parent: "Steam / Fried / Pan Fried", option: "Fried").
+  double getCategoryOptionCost(String parentCategory, String optionName) {
+    final parent = _categoryConfigs.firstWhere(
+      (c) =>
+          c.name.trim().toLowerCase() == parentCategory.trim().toLowerCase() ||
+          normalizeCategoryKey(c.name) == normalizeCategoryKey(parentCategory),
+      orElse: () => ItemCategory(id: '', name: parentCategory),
+    );
+    return parent.getOptionCost(optionName);
+  }
+
 
   /// Returns only the items/quantities that have been paid for in the given order.
   /// If an item contains add-ons (composite key with '+'), it is only considered confirmed
@@ -216,100 +309,17 @@ class OrderController extends ChangeNotifier {
   /// Total count of items in the current active cart.
   int get cartItemCount => _cart.values.fold(0, (a, b) => a + b);
 
-  /// Returns a breakdown of base item and add-ons for a composite cart item key.
-  /// Returns null if the item has no linked add-ons.
-  CartItemBreakdown? getCartItemBreakdown(String itemId) {
-    if (!itemId.contains('+')) return null;
-
-    final parts = itemId.split('+');
-    final baseId = parts[0];
-    final addonIds = parts.sublist(1);
-    final baseItem = findItem(baseId);
-
-    if (baseItem.id.isEmpty) return null;
-
-    final addonItems = <MenuItem>[];
-    for (final aId in addonIds) {
-      final addon = findItem(aId);
-      if (addon.id.isNotEmpty) {
-        addonItems.add(addon);
-      }
-    }
-
-    if (addonItems.isEmpty) return null;
-
-    final Map<String, ({int count, double singlePrice})> addonGroups = {};
-    for (final addon in addonItems) {
-      final existing = addonGroups[addon.name];
-      if (existing != null) {
-        addonGroups[addon.name] = (
-          count: existing.count + 1,
-          singlePrice: existing.singlePrice,
-        );
-      } else {
-        addonGroups[addon.name] = (
-          count: 1,
-          singlePrice: addon.price,
-        );
-      }
-    }
-
-    final addedPrice = addonGroups.values.fold(
-      0.0,
-      (sum, g) => sum + g.singlePrice * g.count,
-    );
-
-    final details = addonGroups.entries.map((entry) {
-      return CartItemAddonDetail(
-        name: entry.key,
-        count: entry.value.count,
-        singlePrice: entry.value.singlePrice,
-        totalPrice: entry.value.singlePrice * entry.value.count,
-      );
-    }).toList();
-
-    return CartItemBreakdown(
-      baseItem: baseItem,
-      basePrice: baseItem.price,
-      addonsPrice: addedPrice,
-      totalUnitPrice: baseItem.price + addedPrice,
-      addonDetails: details,
-    );
-  }
-
-  /// Resolves an item by its ID.
-  /// Handles base menu items, slash variant selections (e.g. itemId_var_option),
-  /// and composite items containing linked add-ons (e.g. baseId+addonId1+addonId2).
-  MenuItem findItem(String itemId) {
+  /// Resolves the underlying base item (pure catalog MenuItem with its base price),
+  /// taking into account any variant or category customizations.
+  MenuItem _resolveBaseItem(String baseId) {
     // 1. Direct match in menu
     for (final m in _menu) {
-      if (m.id == itemId) return m;
+      if (m.id == baseId) return m;
     }
 
-    // 2. Composite items with add-ons (e.g. "baseItemId+addonId1")
-    if (itemId.contains('+')) {
-      final breakdown = getCartItemBreakdown(itemId);
-      if (breakdown != null) {
-        final prefix = breakdown.addonDetails.map((entry) {
-          final name = entry.name;
-          final count = entry.count;
-          return count > 1 ? '[$count' 'x $name]' : '[$name]';
-        }).join(' ');
-
-        return MenuItem(
-          id: itemId,
-          name: '$prefix ${breakdown.baseItem.name}',
-          price: breakdown.totalUnitPrice,
-          category: breakdown.baseItem.category,
-          colorHex: breakdown.baseItem.colorHex,
-          isAddon: false,
-        );
-      }
-    }
-
-    // 3. Customized variant / category items (e.g. "item_chai_var_Tea", "item_rice_cat_Rice", or "item_123_var_Fried Rice_cat_Rice")
-    if (itemId.contains('_var_') || itemId.contains('_cat_')) {
-      String remaining = itemId;
+    // 2. Customized variant / category item (e.g. itemId_var_option or itemId_cat_Rice)
+    if (baseId.contains('_var_') || baseId.contains('_cat_')) {
+      String remaining = baseId;
       String? resolvedCat;
       final lastCatIdx = remaining.lastIndexOf('_cat_');
       if (lastCatIdx != -1) {
@@ -322,16 +332,136 @@ class OrderController extends ChangeNotifier {
         resolvedName = remaining.substring(lastVarIdx + 5);
         remaining = remaining.substring(0, lastVarIdx);
       }
-      final baseId = remaining;
-      final baseItem = findItem(baseId);
+      final rawBase = _resolveBaseItem(remaining);
+      final rawCat = resolvedCat ?? rawBase.category;
+      return MenuItem(
+        id: baseId,
+        name: resolvedName ?? rawBase.name,
+        price: rawBase.price,
+        displayName: rawBase.customDisplayName,
+        category: rawCat,
+        colorHex: rawBase.colorHex,
+        isAddon: rawBase.isAddon,
+      );
+    }
+
+    return MenuItem(
+      id: baseId,
+      name: baseId.isNotEmpty ? baseId : 'Item',
+      price: 0.0,
+      category: 'General',
+    );
+  }
+
+  /// Returns a breakdown of base item, category additional cost, and add-ons for a cart item key.
+  /// Returns null if the item has no linked add-ons and no category surcharge.
+  CartItemBreakdown? getCartItemBreakdown(String itemId) {
+    final compositeIndex = itemId.indexOf('+');
+    final baseId = compositeIndex != -1 ? itemId.substring(0, compositeIndex) : itemId;
+    final baseItem = _resolveBaseItem(baseId);
+    final categoryAdditionalCost =
+        !baseItem.effectiveIsAddon ? getCategoryCost(baseItem.category) : 0.0;
+    final categoryCostReason =
+        !baseItem.effectiveIsAddon ? getCategoryCostReason(baseItem.category) : null;
+
+    final addonDetails = <CartItemAddonDetail>[];
+    double addonsPrice = 0.0;
+
+    if (compositeIndex != -1) {
+      final addonSection = itemId.substring(compositeIndex + 1);
+      final addonIdList = addonSection.split('+');
+
+      final Map<String, int> addonCounts = {};
+      for (final aid in addonIdList) {
+        if (aid.isNotEmpty) {
+          addonCounts[aid] = (addonCounts[aid] ?? 0) + 1;
+        }
+      }
+
+      for (final entry in addonCounts.entries) {
+        final addon = _resolveBaseItem(entry.key);
+        final singlePrice = addon.price;
+        final totalAddonPrice = singlePrice * entry.value;
+        addonsPrice += totalAddonPrice;
+        addonDetails.add(CartItemAddonDetail(
+          name: addon.name,
+          count: entry.value,
+          singlePrice: singlePrice,
+          totalPrice: totalAddonPrice,
+        ));
+      }
+    }
+
+    if (addonDetails.isEmpty && categoryAdditionalCost == 0) {
+      return null;
+    }
+
+    return CartItemBreakdown(
+      baseItem: baseItem,
+      basePrice: baseItem.price,
+      categoryAdditionalCost: categoryAdditionalCost,
+      categoryCostReason: categoryCostReason,
+      addonsPrice: addonsPrice,
+      totalUnitPrice: baseItem.price + categoryAdditionalCost + addonsPrice,
+      addonDetails: addonDetails,
+    );
+  }
+
+  /// Finds a MenuItem by ID.
+  /// Supports:
+  /// - Direct catalog menu items
+  /// - Slash variant / category dynamic selections (e.g. "itemId_var_option_cat_Rice")
+  /// - Composite add-on items (e.g. "itemId+addonId1+addonId2")
+  ///
+  /// Any active category additional cost configured for the item's category is included.
+  MenuItem findItem(String itemId) {
+    final compositeIndex = itemId.indexOf('+');
+
+    // 1. Composite items with add-ons (e.g. "baseItemId+addonId1")
+    if (compositeIndex != -1) {
+      final breakdown = getCartItemBreakdown(itemId);
+      if (breakdown != null) {
+        final prefix = breakdown.addonDetails.map((entry) {
+          final name = entry.name;
+          final count = entry.count;
+          return count > 1 ? '[$count' 'x $name]' : '[$name]';
+        }).join(' ');
+
+        return MenuItem(
+          id: itemId,
+          name: '$prefix ${breakdown.baseItem.name}'.trim(),
+          displayName: breakdown.baseItem.customDisplayName != null
+              ? '$prefix ${breakdown.baseItem.displayName}'.trim()
+              : null,
+          price: breakdown.totalUnitPrice,
+          category: breakdown.baseItem.category,
+          colorHex: breakdown.baseItem.colorHex,
+          isAddon: false,
+        );
+      }
+    }
+
+    // 2. Customized variant / category items (e.g. "item_chai_var_Tea", "item_rice_cat_Rice", or "item_123_var_Fried Rice_cat_Rice")
+    if (itemId.contains('_var_') || itemId.contains('_cat_')) {
+      final baseItem = _resolveBaseItem(itemId);
+      final catCost = !baseItem.effectiveIsAddon ? getCategoryCost(baseItem.category) : 0.0;
       return MenuItem(
         id: itemId,
-        name: resolvedName ?? baseItem.name,
-        price: baseItem.price,
-        category: resolvedCat ?? baseItem.category,
+        name: baseItem.name,
+        displayName: baseItem.customDisplayName,
+        price: baseItem.price + catCost,
+        category: baseItem.category,
         colorHex: baseItem.colorHex,
         isAddon: baseItem.isAddon,
       );
+    }
+
+    // 3. Direct match in menu
+    for (final m in _menu) {
+      if (m.id == itemId) {
+        final catCost = !m.effectiveIsAddon ? getCategoryCost(m.category) : 0.0;
+        return catCost > 0 ? m.copyWith(price: m.price + catCost) : m;
+      }
     }
 
     return MenuItem(
@@ -352,7 +482,7 @@ class OrderController extends ChangeNotifier {
     return total;
   }
 
-  /// Total cost of base items in the cart (excluding add-on surcharges).
+  /// Total cost of base items in the cart (excluding category surcharges and add-on surcharges).
   double get cartBaseItemsTotal {
     double total = 0.0;
     _cart.forEach((itemId, qty) {
@@ -362,6 +492,18 @@ class OrderController extends ChangeNotifier {
       } else {
         final item = findItem(itemId);
         total += item.price * qty;
+      }
+    });
+    return total;
+  }
+
+  /// Total cost of category additional fees / packaging surcharges in the cart.
+  double get cartCategoryCostsTotal {
+    double total = 0.0;
+    _cart.forEach((itemId, qty) {
+      final breakdown = getCartItemBreakdown(itemId);
+      if (breakdown != null) {
+        total += breakdown.categoryAdditionalCost * qty;
       }
     });
     return total;
@@ -392,7 +534,9 @@ class OrderController extends ChangeNotifier {
 
   /// Filtered menu based on selected category chip.
   List<MenuItem> get filteredMenu {
-    if (_selectedCategory == 'All') return _menu;
+    if (_selectedCategory == 'All') {
+      return List.unmodifiable(_menu);
+    }
     return _menu
         .where((m) =>
             m.category.trim().toLowerCase() == _selectedCategory.toLowerCase())
@@ -443,6 +587,7 @@ class OrderController extends ChangeNotifier {
               name: item.name,
               category: item.category,
               colorHex: item.colorHex,
+              itemDisplayName: item.customDisplayName,
             ),
           );
           acc.totalQty += remainingQty;
@@ -474,6 +619,7 @@ class OrderController extends ChangeNotifier {
                 name: matchedItem.name,
                 category: matchedItem.category,
                 colorHex: matchedItem.colorHex,
+                itemDisplayName: matchedItem.customDisplayName,
               ),
             );
             acc.totalQty += qty;
@@ -491,6 +637,7 @@ class OrderController extends ChangeNotifier {
         totalQuantity: acc.totalQty,
         tickets: List.unmodifiable(acc.tickets),
         colorHex: acc.colorHex,
+        itemDisplayName: acc.itemDisplayName,
       );
     }).toList();
 
@@ -514,7 +661,12 @@ class OrderController extends ChangeNotifier {
         final snapshot = order.itemSnapshots[itemId];
         final name = snapshot?['name']?.toString() ?? item.name;
         final category = snapshot?['category']?.toString() ?? item.category;
-        final displayName = snapshot?['displayName']?.toString() ?? item.displayName;
+        final rawDisplayName = snapshot?['displayName']?.toString() ?? item.displayName;
+        final catTrimmed = category.trim();
+        final displayName = (catTrimmed.isNotEmpty &&
+                !rawDisplayName.endsWith('($catTrimmed)'))
+            ? '$rawDisplayName ($catTrimmed)'
+            : rawDisplayName;
         final colorHex = (snapshot?['colorHex'] as num?)?.toInt() ?? item.colorHex;
         final isPaidItem = order.isPaid || ((order.paidItems[itemId] ?? 0) >= qty);
         final completedQty = order.getCompletedQuantity(itemId);
@@ -574,10 +726,188 @@ class OrderController extends ChangeNotifier {
     _isLoading = true;
     notifyListeners();
 
-    _menu = await _storageService.loadMenu();
-    _orders = await _storageService.loadOrders();
+    _menu = List<MenuItem>.from(await _storageService.loadMenu());
+    _orders = List<StallOrder>.from(await _storageService.loadOrders());
     _nextToken = await _storageService.loadNextToken();
+    _categoryConfigs = List<ItemCategory>.from(await _storageService.loadCategories());
+    await _syncCategoriesWithMenu();
     _isLoading = false;
+    notifyListeners();
+  }
+
+  /// Automatically synchronizes category configurations with all categories present in the menu.
+  Future<void> _syncCategoriesWithMenu() async {
+    final existingMap = {
+      for (final c in _categoryConfigs) c.name.trim().toLowerCase(): c,
+    };
+    bool modified = false;
+
+    for (final item in _menu) {
+      final rawCat = item.category.trim();
+      if (rawCat.isEmpty || rawCat.toLowerCase() == 'all') continue;
+
+      if (item.hasSlashCategoryVariants) {
+        final parentKey = rawCat.toLowerCase();
+        final normParentKey = normalizeCategoryKey(rawCat);
+        if (!existingMap.containsKey(parentKey) && !existingMap.containsKey(normParentKey)) {
+          final parentCat = ItemCategory(
+            id: 'cat_${parentKey.replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+            name: rawCat,
+            colorHex: item.colorHex,
+            options: item.slashCategoryVariants
+                .map(
+                  (variant) => CategoryOption(
+                    id: 'opt_${variant.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+                    name: variant,
+                    additionalCost: 0.0,
+                    isEnabled: true,
+                  ),
+                )
+                .toList(),
+          );
+          _categoryConfigs.add(parentCat);
+          existingMap[parentKey] = parentCat;
+          existingMap[normParentKey] = parentCat;
+          modified = true;
+        }
+      }
+
+      final catVariants = item.hasSlashCategoryVariants
+          ? item.slashCategoryVariants
+          : [rawCat];
+
+      for (final cat in catVariants) {
+        final key = cat.trim().toLowerCase();
+        if (key.isNotEmpty && !existingMap.containsKey(key)) {
+          final newCat = ItemCategory(
+            id: 'cat_${key.replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+            name: cat.trim(),
+            additionalCost: 0.0,
+            colorHex: item.colorHex,
+          );
+          _categoryConfigs.add(newCat);
+          existingMap[key] = newCat;
+          modified = true;
+        }
+      }
+    }
+
+    if (modified) {
+      await _storageService.saveCategories(_categoryConfigs);
+    }
+  }
+
+  /// Saves or updates a category's configuration and persists it.
+  Future<void> saveCategoryConfig(ItemCategory config) async {
+    final normalized = config.name.trim().toLowerCase();
+    final idx = _categoryConfigs.indexWhere(
+      (c) => c.name.trim().toLowerCase() == normalized,
+    );
+    if (idx != -1) {
+      _categoryConfigs[idx] = config;
+    } else {
+      _categoryConfigs.add(config);
+    }
+
+    // Synchronize individual category options so direct lookups find their costs
+    if (config.effectiveOptions.isNotEmpty) {
+      for (final opt in config.effectiveOptions) {
+        final optKey = opt.name.trim().toLowerCase();
+        final subIdx = _categoryConfigs.indexWhere(
+          (c) => c.name.trim().toLowerCase() == optKey,
+        );
+        if (subIdx != -1) {
+          _categoryConfigs[subIdx] = _categoryConfigs[subIdx].copyWith(
+            additionalCost: opt.additionalCost,
+            isEnabled: opt.isEnabled,
+          );
+        } else {
+          _categoryConfigs.add(ItemCategory(
+            id: 'cat_${optKey.replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+            name: opt.name.trim(),
+            additionalCost: opt.additionalCost,
+            isEnabled: opt.isEnabled,
+          ));
+        }
+      }
+    }
+
+    await _storageService.saveCategories(_categoryConfigs);
+    notifyListeners();
+  }
+
+  /// Updates the additional cost for a specific category option/variant
+  /// (e.g. parent: "Momos" or "Steam / Fried / Pan Fried", option: "Fried", cost: 10.0).
+  Future<void> updateCategoryOptionCost({
+    required String parentCategory,
+    required String optionName,
+    required double additionalCost,
+  }) async {
+    final normalized = parentCategory.trim().toLowerCase();
+    final idx = _categoryConfigs.indexWhere(
+      (c) => c.name.trim().toLowerCase() == normalized,
+    );
+    if (idx != -1) {
+      final parent = _categoryConfigs[idx];
+      final currentOptions = List<CategoryOption>.from(parent.effectiveOptions);
+      final optIdx = currentOptions.indexWhere(
+        (o) => o.name.trim().toLowerCase() == optionName.trim().toLowerCase(),
+      );
+      if (optIdx != -1) {
+        currentOptions[optIdx] = currentOptions[optIdx].copyWith(additionalCost: additionalCost);
+      } else {
+        currentOptions.add(CategoryOption(
+          id: 'opt_${optionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+          name: optionName.trim(),
+          additionalCost: additionalCost,
+        ));
+      }
+      final updated = parent.copyWith(options: currentOptions);
+      _categoryConfigs[idx] = updated;
+      await saveCategoryConfig(updated);
+    } else {
+      await saveCategoryConfig(ItemCategory(
+        id: 'cat_${normalized.replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+        name: parentCategory.trim(),
+        options: [
+          CategoryOption(
+            id: 'opt_${optionName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+            name: optionName.trim(),
+            additionalCost: additionalCost,
+          ),
+        ],
+      ));
+    }
+  }
+
+  /// Updates the additional cost, optional reason, and active toggle for a category.
+  Future<void> updateCategoryCost({
+    required String categoryName,
+    required double additionalCost,
+    String? reason,
+    bool? isEnabled,
+  }) async {
+    final normalized = categoryName.trim().toLowerCase();
+    final idx = _categoryConfigs.indexWhere(
+      (c) => c.name.trim().toLowerCase() == normalized,
+    );
+    if (idx != -1) {
+      _categoryConfigs[idx] = _categoryConfigs[idx].copyWith(
+        additionalCost: additionalCost,
+        costReason: reason,
+        clearCostReason: reason == null || reason.trim().isEmpty,
+        isEnabled: isEnabled ?? _categoryConfigs[idx].isEnabled,
+      );
+    } else {
+      _categoryConfigs.add(ItemCategory(
+        id: 'cat_${normalized.replaceAll(RegExp(r'[^a-z0-9]'), '_')}',
+        name: categoryName.trim(),
+        additionalCost: additionalCost,
+        costReason: reason,
+        isEnabled: isEnabled ?? true,
+      ));
+    }
+    await _storageService.saveCategories(_categoryConfigs);
     notifyListeners();
   }
 
@@ -585,6 +915,7 @@ class OrderController extends ChangeNotifier {
     await _storageService.saveMenu(_menu);
     await _storageService.saveOrders(_orders);
     await _storageService.saveNextToken(_nextToken);
+    await _storageService.saveCategories(_categoryConfigs);
   }
 
   // ---------------------------------------------------------------------------
@@ -872,12 +1203,18 @@ class OrderController extends ChangeNotifier {
     final currentSnapshots = <String, Map<String, dynamic>>{};
     _cart.forEach((itemId, qty) {
       final item = findItem(itemId);
+      final breakdown = getCartItemBreakdown(itemId);
       summaryParts.add('${qty}x ${item.name}');
       currentSnapshots[itemId] = {
         'name': item.name,
         'displayName': item.displayName,
         'price': item.price,
         'category': item.category,
+        if (breakdown != null && breakdown.categoryAdditionalCost > 0) ...{
+          'categoryAdditionalCost': breakdown.categoryAdditionalCost,
+          if (breakdown.categoryCostReason != null)
+            'categoryCostReason': breakdown.categoryCostReason,
+        },
         if (item.colorHex != null) 'colorHex': item.colorHex,
       };
     });
@@ -1201,6 +1538,7 @@ class OrderController extends ChangeNotifier {
 
   Future<void> addMenuItem(MenuItem item) async {
     _menu.add(item);
+    await _syncCategoriesWithMenu();
     await _saveState();
     notifyListeners();
   }
@@ -1209,6 +1547,7 @@ class OrderController extends ChangeNotifier {
     final idx = _menu.indexWhere((m) => m.id == updated.id);
     if (idx != -1) {
       _menu[idx] = updated;
+      await _syncCategoriesWithMenu();
       await _saveState();
       notifyListeners();
     }
@@ -1237,6 +1576,7 @@ class OrderController extends ChangeNotifier {
     } else {
       _menu.addAll(newMenu);
     }
+    await _syncCategoriesWithMenu();
     await _saveState();
     notifyListeners();
   }
@@ -1247,6 +1587,7 @@ class _ItemAccumulator {
   final String name;
   final String category;
   final int? colorHex;
+  final String? itemDisplayName;
   int totalQty = 0;
   final List<OrderTicketQuantity> tickets = [];
 
@@ -1255,5 +1596,6 @@ class _ItemAccumulator {
     required this.name,
     required this.category,
     this.colorHex,
+    this.itemDisplayName,
   });
 }

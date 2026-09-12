@@ -1,10 +1,12 @@
 import '../../theme/category_colors.dart';
+export 'item_category.dart';
 
 // Data models for the Stall POS screen and orders.
 
 class MenuItem {
   final String id;
   final String name;
+  final String? _displayName;
   final double price;
   final String category;
   final int? colorHex;
@@ -15,11 +17,15 @@ class MenuItem {
     required this.id,
     required this.name,
     required this.price,
+    String? displayName,
     this.category = 'General',
     this.colorHex,
     this.isAddon = false,
     this.linkedCategory,
-  });
+  }) : _displayName = displayName;
+
+  /// Custom display name if explicitly configured, else null.
+  String? get customDisplayName => _displayName;
 
   /// Check if this item qualifies as an add-on either via explicit flag
   /// or category name containing 'addon' or 'extra'.
@@ -67,15 +73,21 @@ class MenuItem {
     return false;
   }
 
-  /// Centralized display name showing item name and category in brackets:
-  /// e.g. "Masala Chai (Beverages)" or "[Extra Cheese] Veg Burger (Fast Food)".
+  /// Clean display name for POS cards, order tickets, and receipts.
+  /// Returns custom [displayName] (or [name]) with [category] in brackets.
   String get displayName {
+    final base = (_displayName != null && _displayName.trim().isNotEmpty)
+        ? _displayName.trim()
+        : name.trim();
     final cat = category.trim();
-    if (cat.isNotEmpty && !name.endsWith('($cat)')) {
-      return '$name ($cat)';
+    if (cat.isNotEmpty && !base.endsWith('($cat)')) {
+      return '$base ($cat)';
     }
-    return name;
+    return base;
   }
+
+  /// Backwards-compatible alias for [displayName].
+  String get effectiveDisplayName => displayName;
 
   /// Whether the item name contains '/' indicating multiple or-variants.
   bool get hasSlashNameVariants => name.contains('/');
@@ -120,6 +132,8 @@ class MenuItem {
     bool? isAddon,
     String? linkedCategory,
     bool clearLinkedCategory = false,
+    String? displayName,
+    bool clearDisplayName = false,
   }) {
     return MenuItem(
       id: id ?? this.id,
@@ -131,6 +145,9 @@ class MenuItem {
       linkedCategory: clearLinkedCategory
           ? null
           : (linkedCategory ?? this.linkedCategory),
+      displayName: clearDisplayName
+          ? null
+          : (displayName ?? _displayName),
     );
   }
 
@@ -143,6 +160,8 @@ class MenuItem {
         if (isAddon) 'isAddon': isAddon,
         if (linkedCategory != null && linkedCategory!.trim().isNotEmpty)
           'linkedCategory': linkedCategory,
+        if (_displayName != null && _displayName.trim().isNotEmpty)
+          'displayName': _displayName,
       };
 
   factory MenuItem.fromJson(Map<String, dynamic> map) {
@@ -159,6 +178,11 @@ class MenuItem {
     final linkedCategory = (linkedCategoryRaw != null && linkedCategoryRaw.isNotEmpty)
         ? linkedCategoryRaw
         : null;
+    final displayNameRaw = map['displayName']?.toString().trim() ??
+        map['display_name']?.toString().trim();
+    final displayName = (displayNameRaw != null && displayNameRaw.isNotEmpty)
+        ? displayNameRaw
+        : null;
     return MenuItem(
       id: map['id']?.toString() ?? '',
       name: map['name']?.toString() ?? '',
@@ -167,6 +191,7 @@ class MenuItem {
       colorHex: parsedColor ?? CategoryColorHelper.getColorForCategory(category),
       isAddon: isAddonExplicit,
       linkedCategory: linkedCategory,
+      displayName: displayName,
     );
   }
 }
@@ -414,6 +439,7 @@ class AggregatedOrderItem {
   final int totalQuantity;
   final List<OrderTicketQuantity> tickets;
   final int? colorHex;
+  final String? itemDisplayName;
 
   const AggregatedOrderItem({
     required this.itemId,
@@ -422,16 +448,19 @@ class AggregatedOrderItem {
     required this.totalQuantity,
     required this.tickets,
     this.colorHex,
+    this.itemDisplayName,
   });
 
-  /// Centralized display name showing item name with category in brackets:
-  /// e.g. "Masala Chai (Beverages)".
+  /// Display name of the item, using itemDisplayName or itemName with category in brackets.
   String get displayName {
+    final base = (itemDisplayName != null && itemDisplayName!.trim().isNotEmpty)
+        ? itemDisplayName!.trim()
+        : itemName.trim();
     final cat = category.trim();
-    if (cat.isNotEmpty && !itemName.endsWith('($cat)')) {
-      return '$itemName ($cat)';
+    if (cat.isNotEmpty && !base.endsWith('($cat)')) {
+      return '$base ($cat)';
     }
-    return itemName;
+    return base;
   }
 }
 
@@ -450,10 +479,12 @@ class CartItemAddonDetail {
   });
 }
 
-/// Represents the monetary breakdown between a base item and its linked add-ons.
+/// Represents the monetary breakdown between a base item, its category surcharge, and its linked add-ons.
 class CartItemBreakdown {
   final MenuItem baseItem;
   final double basePrice;
+  final double categoryAdditionalCost;
+  final String? categoryCostReason;
   final double addonsPrice;
   final double totalUnitPrice;
   final List<CartItemAddonDetail> addonDetails;
@@ -461,10 +492,15 @@ class CartItemBreakdown {
   const CartItemBreakdown({
     required this.baseItem,
     required this.basePrice,
+    this.categoryAdditionalCost = 0.0,
+    this.categoryCostReason,
     required this.addonsPrice,
     required this.totalUnitPrice,
     required this.addonDetails,
   });
+
+  /// Whether the item includes a category-level surcharge / additional cost.
+  bool get hasCategoryCost => categoryAdditionalCost > 0;
 
   bool get hasAddons => addonsPrice > 0 || addonDetails.isNotEmpty;
 }

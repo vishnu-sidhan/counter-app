@@ -29,13 +29,9 @@ void main() {
     await tester.tap(find.byTooltip('Add Menu Item'));
     await tester.pumpAndSettle();
 
-    final textFields = find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.byType(TextField),
-    );
-    await tester.enterText(textFields.at(0), 'Veg Roll');
-    await tester.enterText(textFields.at(1), '80');
-    await tester.enterText(textFields.at(2), 'Snacks');
+    await tester.enterText(find.widgetWithText(TextField, 'Item Name *'), 'Veg Roll');
+    await tester.enterText(find.widgetWithText(TextField, 'Price (₹) *'), '80');
+    await tester.enterText(find.widgetWithText(TextField, 'Or enter custom category'), 'Snacks');
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add Item'));
     await tester.pumpAndSettle();
@@ -320,13 +316,9 @@ void main() {
     await tester.tap(find.byTooltip('Add Menu Item'));
     await tester.pumpAndSettle();
 
-    var textFields = find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.byType(TextField),
-    );
-    await tester.enterText(textFields.at(0), 'Masala Tea');
-    await tester.enterText(textFields.at(1), '20');
-    await tester.enterText(textFields.at(2), 'Beverages');
+    await tester.enterText(find.widgetWithText(TextField, 'Item Name *'), 'Masala Tea');
+    await tester.enterText(find.widgetWithText(TextField, 'Price (₹) *'), '20');
+    await tester.enterText(find.widgetWithText(TextField, 'Or enter custom category'), 'Beverages');
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add Item'));
     await tester.pumpAndSettle();
@@ -335,13 +327,9 @@ void main() {
     await tester.tap(find.byTooltip('Add Menu Item'));
     await tester.pumpAndSettle();
 
-    textFields = find.descendant(
-      of: find.byType(AlertDialog),
-      matching: find.byType(TextField),
-    );
-    await tester.enterText(textFields.at(0), 'Aloo Samosa');
-    await tester.enterText(textFields.at(1), '30');
-    await tester.enterText(textFields.at(2), 'Snacks');
+    await tester.enterText(find.widgetWithText(TextField, 'Item Name *'), 'Aloo Samosa');
+    await tester.enterText(find.widgetWithText(TextField, 'Price (₹) *'), '30');
+    await tester.enterText(find.widgetWithText(TextField, 'Or enter custom category'), 'Snacks');
     await tester.pumpAndSettle();
     await tester.tap(find.text('Add Item'));
     await tester.pumpAndSettle();
